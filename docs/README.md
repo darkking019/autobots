@@ -27,7 +27,8 @@ pip install -r requirements.txt
 playwright install chromium
 python src/main.py --param "FATIMA TERMOS" "JOÃO SILVA" "187054551"
 2. API Local
-Bashuvicorn src.api:app --reload
+python -m uvicorn src.api:app --reload --host 127.0.0.1 --port 8000
+
 # Teste: http://localhost:8000/docs (Swagger)
 3. Docker
 Bashdocker build -t mostqi-rpa .
