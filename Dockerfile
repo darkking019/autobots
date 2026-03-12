@@ -23,8 +23,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# copiar requirements primeiro (melhora build)
+# copiar requirements primeiro
+COPY front ./front
 COPY requirements.txt .
+COPY tests ./tests  
+
 
 # instalar dependências sem cache
 RUN pip install --upgrade pip \
@@ -33,7 +36,7 @@ RUN pip install --upgrade pip \
 # instalar chromium do playwright
 RUN playwright install --with-deps chromium
 
-# copiar código
+
 COPY src ./src
 
 # expor porta

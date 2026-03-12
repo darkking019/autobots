@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Consulta Portal da Transparência - mostQI</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { font-family: system-ui, sans-serif; }
+    .card { transition: all 0.2s; }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+    .evidence-img { max-height: 500px; }
+    textarea { resize: vertical; min-height: 120px; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState } = React;
+
+function App() {
+  const [paramsText, setParamsText] = useState("");
+  const [planilhaId, setPlanilhaId] = useState("");
+  const [limitePlanilha, setLimitePlanilha] = useState("50");
+  const [results, setResults] = useState([]);           // array de { param, loading, data, error }
+  const [globalLoading, setGlobalLoading] = useState(false);
+
+  // Função para consultas manuais (textarea) - já existia
+  async function consultar() {
+    const lines = paramsText.trim().split("\n").filter(line => line.trim() !== "");
+    if (lines.length === 0) return alert("Digite pelo menos um nome/CPF/NIS");
+
+    setGlobalLoading(true);
+    setResults(lines.map(param => ({ param, loading: true, data: null, error: null })));
+
+    const promises = lines.map(async (param, index) => {
+      try {
+        const res = await fetch("http://localhost:8000/consultar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ param: param.trim(), filtro: null })
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+
+        setResults(prev => {
+          const newResults = [...prev];
+          newResults[index] = { param, loading: false, data, error: data.erro || null };
+          return newResults;
+        });
+      } catch (err) {
+        setResults(prev => {
+          const newResults = [...prev];
+          newResults[index] = { param, loading: false, data: null, error: err.message || "Erro desconhecido" };
+          return newResults;
+        });
+      }
+    });
+
+    await Promise.all(promises);
+    setGlobalLoading(false);
+  }
+
+  // Nova função para consultar da planilha
+  async function consultarPlanilha() {
+    if (!planilhaId.trim()) return alert("Digite o ID da planilha Google Sheets");
+
+    setGlobalLoading(true);
+    setResults([]);  // limpa resultados anteriores
+
+    try {
+      const res = await fetch("http://localhost:8000/consultar-planilha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spreadsheet_id: planilhaId.trim(),
+          limite: parseInt(limitePlanilha) || 50,
+          worksheet_name: "Sheet1",           // pode deixar fixo ou adicionar input depois
+          coluna_param: "A",                  // coluna A = primeira coluna
+          start_row: 2                        // pula header
+        })
+      });
+
+      if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+
+      const response = await res.json();
+
+      if (response.error) {
+        alert(response.error);
+        return;
+      }
+
+      // Converte os resultados da planilha para o formato que os cards entendem
+      const mappedResults = response.resultados.map(r => ({
+        param: r.param,
+        loading: false,
+        data: r,
+        error: r.erro
+      }));
+
+      setResults(mappedResults);
+    } catch (err) {
+      alert("Erro ao consultar planilha: " + err.message);
+    } finally {
+      setGlobalLoading(false);
+    }
+  }
+
+  return React.createElement('div', { className: "max-w-6xl mx-auto p-6" },
+
+    React.createElement('h1', { className: "text-4xl font-bold text-center mb-8 text-blue-700 flex items-center justify-center gap-3" },
+      "🕵️ Portal da Transparência - RPA mostQI",
+      globalLoading && React.createElement('span', { className: "text-lg animate-pulse" }, "(processando...)")
+    ),
+
+    // Seção 1: Consulta manual (já tinha)
+    React.createElement('div', { className: "mb-12 p-6 bg-white rounded-2xl shadow" },
+      React.createElement('h2', { className: "text-2xl font-semibold mb-4" }, "Consulta Manual (um ou mais por linha)"),
+      React.createElement('textarea', {
+        placeholder: "Cole nomes / CPFs / NIS (um por linha)\nEx:\nFATIMA TERMOS\n187054551\nJOÃO SILVA",
+        value: paramsText,
+        onChange: e => setParamsText(e.target.value),
+        className: "w-full p-4 border-2 border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-lg font-mono whitespace-pre",
+        rows: 6
+      }),
+      React.createElement('div', { className: "text-center mt-6" },
+        React.createElement('button', {
+          onClick: consultar,
+          disabled: globalLoading || !paramsText.trim(),
+          className: "px-10 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold rounded-xl text-xl transition shadow-lg"
+        }, globalLoading ? "Consultando..." : "Consultar Manual")
+      )
+    ),
+
+    // Seção 2: Consulta via Google Sheets (nova)
+    React.createElement('div', { className: "mb-12 p-6 bg-white rounded-2xl shadow" },
+      React.createElement('h2', { className: "text-2xl font-semibold mb-4" }, "Consulta em Lote via Google Sheets"),
+      React.createElement('input', {
+        type: "text",
+        placeholder: "ID da planilha (copie da URL: https://docs.google.com/spreadsheets/d/ID_AQUI/edit)",
+        value: planilhaId,
+        onChange: e => setPlanilhaId(e.target.value),
+        className: "w-full p-3 border rounded-xl mb-4 focus:outline-none focus:border-green-500"
+      }),
+      React.createElement('input', {
+        type: "number",
+        placeholder: "Quantas linhas processar (ex: 50)",
+        value: limitePlanilha,
+        onChange: e => setLimitePlanilha(e.target.value),
+        className: "w-full p-3 border rounded-xl mb-6 focus:outline-none focus:border-green-500",
+        min: 1,
+        max: 200
+      }),
+      React.createElement('div', { className: "text-center" },
+        React.createElement('button', {
+          onClick: consultarPlanilha,
+          disabled: globalLoading || !planilhaId.trim(),
+          className: "px-10 py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold rounded-xl text-xl transition shadow-lg"
+        }, globalLoading ? "Processando planilha..." : "Consultar da Planilha")
+      )
+    ),
+
+    // Resultados (comum para as duas formas)
+results.length > 0 && React.createElement('div', { className: "space-y-10" },
+  results.map((item, i) => 
+    React.createElement('div', { key: i, className: "bg-white rounded-2xl shadow-lg p-6 border border-gray-200" },
+      React.createElement('h2', { className: "text-2xl font-bold mb-4 text-gray-800 border-b pb-2" },
+        item.param,
+        item.loading && React.createElement('span', { className: "ml-3 text-blue-500 animate-pulse" }, "consultando...")
+      ),
+
+      item.error && React.createElement('div', { className: "bg-red-50 border border-red-300 text-red-700 p-4 rounded-xl mb-6" },
+        item.error
+      ),
+
+      item.data && !item.error && React.createElement('div', {},
+        // Panorama
+        React.createElement('div', { className: "mb-8" },
+          React.createElement('h3', { className: "text-xl font-semibold mb-2" }, "📊 Panorama"),
+          React.createElement('p', { className: "text-gray-700 whitespace-pre-line" },
+            item.data.dados?.panorama || "Panorama não encontrado"
+          )
+        ),
+
+        // Benefícios
+        item.data.dados?.beneficios?.length > 0 && React.createElement('div', { className: "mb-8" },
+          React.createElement('h3', { className: "text-xl font-semibold mb-4" }, "💰 Benefícios encontrados"),
+          React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-6" },
+            item.data.dados.beneficios.map((b, j) =>
+              React.createElement('div', { key: j, className: "card bg-gray-50 rounded-xl p-5 border border-gray-200" },
+                React.createElement('h4', { className: "font-bold text-lg mb-2" }, b.nome),
+                React.createElement('p', { className: "text-gray-600 text-sm whitespace-pre-line" }, b.detalhes)
+              )
+            )
+          )
+        ),
+
+        // Evidências
+        item.data.evidencias?.length > 0 && React.createElement('div', {},
+          React.createElement('h3', { className: "text-xl font-semibold mb-4" }, "📸 Evidências"),
+          React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
+            item.data.evidencias.map((ev, k) =>
+              React.createElement('div', { key: k, className: "bg-gray-50 rounded-xl overflow-hidden shadow" },
+                React.createElement('div', { className: "bg-blue-600 text-white px-4 py-2 font-medium" },
+                  ev.descricao || ev.tipo || "Evidência"
+                ),
+                React.createElement('img', {
+                  src: `data:image/png;base64,${ev.base64}`,
+                  alt: ev.descricao || "Screenshot",
+                  className: "evidence-img w-full object-contain p-3 bg-white"
+                })
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+  );
+}   
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>

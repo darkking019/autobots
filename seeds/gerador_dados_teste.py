@@ -25,7 +25,6 @@ def gerar_nome_completo():
     else:
         primeiro = random.choice(primeiros_nomes_f)
     
-   
     qtd_sobrenomes = random.choices([1, 2, 3], weights=[70, 25, 5])[0]
     sobrenomes_escolhidos = random.sample(sobrenomes, qtd_sobrenomes)
     

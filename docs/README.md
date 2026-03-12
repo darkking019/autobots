@@ -1,108 +1,80 @@
-# Desafio Full Stack Python - Parte 1
+# Desafio mostQI - RPA + Hiperautomação (Portal da Transparência)
 
-Este projeto implementa um **robô RPA em Python** utilizando [Playwright](https://playwright.dev/python/) para automatizar consultas no [Portal da Transparência](https://portaldatransparencia.gov.br).  
-O objetivo é buscar informações de pessoas físicas, capturar evidências e retornar os dados em formato JSON.
+**Desafio Full Stack Python** – Parte 1 (obrigatória) + Parte 2 (bônus)  
+Repositório: https://github.com/darkking019/autobots.git
 
----
+## ✨ O que foi entregue 
 
-## 🚀 Funcionalidades
+- ✅ RPA completo com **Playwright** (headless + paralelo)
+- ✅ Tratamento exato dos 5 cenários de teste do desafio
+- ✅ Evidência em **Base64 + PNG físico**
+- ✅ **API REST** com FastAPI (deploy Railway)
+- ✅ **Docker** + Dockerfile otimizado
+- ✅ Frontend simples (React via CDN) consumindo a API
+- ✅ Gerador de CPFs/NIS/nomes brasileiros válidos para testes
+- ✅ Execução paralela com `ThreadPoolExecutor`
+- ✅ Testes unitários (base)
 
-- Execução simultânea de múltiplas consultas (ThreadPoolExecutor).
-- Captura de **evidência em Base64** para o JSON e **arquivo físico `.png`** para conferência.
-- Tratamento de erros com mensagens claras:
-  - Nenhum resultado encontrado.
-  - Timeout ou falha de carregamento.
-- Extração de:
-  - Panorama da relação da pessoa com o Governo Federal.
-  - Benefícios recebidos (nome, detalhes, link).
-- Saída estruturada em JSON.
+**Deploy ao vivo**:  
+API → https://autobots-production-8bc0.up.railway.app  
+Frontend demo → abra o `frontend/index.html`
 
----
+## 🚀 Como rodar
 
-## 📂 Estrutura do Projeto
-
-src/
-├── main.py              # Ponto de entrada (argparse, executor paralelo)
-├── bot.py               # Função run_bot e lógica Playwright
-├── utils.py             # Funções auxiliares (screenshot, JSON)
-└── requirements.txt     # Dependências
-
-Código
-
----
-
-## ⚙️ Requisitos
-
-- Python 3.10+
-- Playwright
-- Pillow
-
-Instalação das dependências:
-
+### 1. Local (CLI)
 ```bash
 pip install -r requirements.txt
-playwright install
-▶️ Como Executar
-Rodar múltiplas consultas em paralelo:
-
-bash
-python src/main.py --param "FATIMA TERMOS" "JOÃO SILVA" "MARIA OLIVEIRA" --filtro "BENEFICIÁRIO DE PROGRAMA SOCIAL"
-📤 Exemplo de Saída
-json
-{
-    "dados": {
-        "panorama": "RECEBIMENTOS DE RECURSOS",
-        "beneficios": [
-            {
-                "nome": "Auxílio Emergencial",
-                "detalhes": "Detalhes do benefício...",
-                "link": "/beneficios/auxilio-emergencial/187054551"
-            }
-        ]
-    },
-    "evidencia_base64": "iVBORw0KGgoAAAANSUhEUgAABQAAA...",
-    "erro": null
-}
-🛡️ Tratamento de Erros
-"erro": "Foram encontrados 0 resultados para o termo JOÃO SILVA com filtro BENEFICIÁRIO DE PROGRAMA SOCIAL"
-
-"erro": "Não foi possível retornar os dados no tempo de resposta solicitado"
-
-📑 Decisões Técnicas
-Playwright escolhido pela robustez em automação web headless.
-
-Execução paralela com ThreadPoolExecutor para suportar múltiplas consultas.
-
-Evidência dupla (Base64 + arquivo físico) para confiabilidade.
-
-Mensagens de erro padronizadas para facilitar testes e validação.
-
-# Desafio mostQI - RPA Hiperautomação
-
-## Como rodar
-
-### Local
-pip install -r requirements.txt
 playwright install chromium
-python src/cli.py --param "FATIMA TERMOS"
-
-### Docker
-docker build -t mostqi-rpa .
+python src/main.py --param "FATIMA TERMOS" "JOÃO SILVA" "187054551"
+2. API Local
+Bashuvicorn src.api:app --reload
+# Teste: http://localhost:8000/docs (Swagger)
+3. Docker
+Bashdocker build -t mostqi-rpa .
 docker run --rm mostqi-rpa --param "187054551"
-## Parte 2 – Hiperautomação (Bônus)
+4. Frontend
+Abra frontend/index.html no navegador (já aponta para o deploy).
+📂 Estrutura do Projeto
+Hiperautomacao/
+├── README.md                 
+├── requirements.txt
+├── Dockerfile
+├── .env.example
+├── .gitignore
+│
+├── src/
+│   ├── __init__.py
+│   ├── main.py                ← CLI (argparse + ThreadPool)
+│   ├── bot.py                 ← função run_bot() pura (extraia do main)
+│   ├── api.py                 ← FastAPI
+│   └── utils.py               ← capture_screenshot + generate_json
+│
+├── frontend/
+│   └── index.html             ← seu React simples (demo)
+│
+├── tests/
+│   └── test_bot.py
+│
+├── data/
+│   └── gerador_dados_teste.py ← gerador de dados
+│
 
-### API REST
-Implementei uma API mínima com **FastAPI** expondo o endpoint:
+🛠️ Decisões Técnicas
 
-POST /consultar
+Playwright → escolha oficial do desafio + mais estável que Selenium.
+FastAPI → moderna, async-ready, Swagger automático.
+Docker → garantiu portabilidade .
+ThreadPoolExecutor → execução simultânea de múltiplos bots .
+Evidência dupla (Base64 + PNG) → confiabilidade em auditoria.
 
-Body exemplo:
-```json
-{
-  "param": "187054551",
-  "filtro": "BENEFICIÁRIO DE PROGRAMA SOCIAL"
-}
+📋 Relatório de Entrega
+
+Desafios enfrentados: instabilidade leve do site e falta de clareza de onde estavam divs no f12 para recuperar os dados necessarios para fazer a busca com os bots.
+
+Testes cobertos: todos os 5 cenários do desafio + gerador de massa.
+
 👨‍💻 Autor
-Jonathan Henrique Ribeiro  
+Jonathan Henrique Ribeiro
+Contato: jonathanhenriquers@gmail.com | www.linkedin.com/in/jonathanhenriqueribeiro
 
 
