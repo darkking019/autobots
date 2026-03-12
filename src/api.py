@@ -3,6 +3,7 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import asyncio
 import os
 from dotenv import load_dotenv
 load_dotenv()  
