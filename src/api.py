@@ -1,22 +1,20 @@
 # api.py
+import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
-from src.main import run_bot # Importa a função principal do bot
-
-
+import os
+from dotenv import load_dotenv
+load_dotenv()  
+from src.main import run_bot
 app = FastAPI(
     title="API Consulta Portal da Transparência - Desafio mostQI",
     description="Robô RPA para consulta de Pessoa Física no Portal da Transparência",
     version="1.0.0"
 )
-
-
 class ConsultaRequest(BaseModel):
     param: str
     filtro: str | None = None
-
-
 @app.post("/consultar", response_model=dict)
 async def consultar(request: ConsultaRequest):
     """
@@ -29,10 +27,9 @@ async def consultar(request: ConsultaRequest):
     """
     try:
         resultado = run_bot(request.param, request.filtro)
-        return resultado
+        return json.loads(resultado)  # se run_bot retorna string JSON, converte para dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    PORT = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

@@ -22,4 +22,4 @@ RUN playwright install --with-deps chromium
 
 COPY src/ ./src/
 
-CMD ["python", "-m", "src.cli", "--param", "187054551"]
+CMD ["python", "-m", "src.main", "--param", "187054551"]
