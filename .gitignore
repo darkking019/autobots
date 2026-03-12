@@ -24,14 +24,14 @@ GOOGLE_CREDENTIALS*
 .env.test.local
 .env.production.local
 
-# Logs e evidências (geradas em runtime)
+# Logs e evidï¿½ncias (geradas em runtime)
 *.log
 app.log
 evidencia/
 debug-*.png
 evidencia_*.png
 
-# Pastas temporárias / cache
+# Pastas temporï¿½rias / cache
 .pytest_cache/
 .coverage
 coverage.xml
@@ -49,7 +49,7 @@ docker-compose.override.yml
 *.sublime-project
 *.sublime-workspace
 
-# Outros arquivos grandes ou desnecessários
+# Outros arquivos grandes ou desnecessï¿½rios
 *.zip
 *.tar.gz
 *.rar
