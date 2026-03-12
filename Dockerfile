@@ -1,6 +1,11 @@
 FROM python:3.11-slim
 
-# Instala dependências do sistema para Playwright + Chromium
+# evitar cache python
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+
+# dependências sistema (Playwright + Chromium)
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libatk-bridge2.0-0 \
@@ -12,14 +17,27 @@ RUN apt-get update && apt-get install -y \
     libappindicator3-1 \
     libxshmfence1 \
     wget \
+    curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# copiar requirements primeiro (melhora build)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# instalar dependências sem cache
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# instalar chromium do playwright
 RUN playwright install --with-deps chromium
 
-COPY src/ ./src/
+# copiar código
+COPY src ./src
 
-CMD ["python", "-m", "src.main", "--param", "187054551"]
+# expor porta
+EXPOSE 8000
+
+# iniciar API
+CMD ["uvicorn",  "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
