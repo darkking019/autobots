@@ -27,7 +27,7 @@ async def consultar(request: ConsultaRequest):
     }
     """
     try:
-        resultado = run_bot(request.param, request.filtro)
+        resultado = await asyncio.to_thread(run_bot, request.param, request.filtro)
         return json.loads(resultado)  # se run_bot retorna string JSON, converte para dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
