@@ -29,15 +29,6 @@ def generate_json(data, base64_img, error=None):
         "erro": error
     }, ensure_ascii=False, indent=4)
 
-def run_bot_instance(parametro, filtro=None):
-    return run_bot(parametro, filtro)
-def run_bot(parametro: str, filtro: str = None):
-    data = {"panorama": "", "beneficios": []}
-    error = None
-    base64_img = None
-
-
-
     with sync_playwright() as p:
         HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
         browser = p.chromium.launch(headless=HEADLESS)

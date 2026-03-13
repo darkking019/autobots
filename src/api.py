@@ -39,13 +39,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Monta pasta front (serve index.html na raiz)
-app.mount("/", StaticFiles(directory="front", html=True), name="static")
-
-# Alternativa explícita (opcional, mas ajuda em alguns casos)
-@app.get("/", include_in_schema=False)
-def root():
-    return FileResponse("front/index.html")
 
 class ConsultaRequest(BaseModel):
     param: str
@@ -82,6 +75,16 @@ async def consultar(request: ConsultaRequest):
     except Exception as e:
         logger.exception("Erro na rota /consultar")
         raise HTTPException(status_code=500, detail="Erro interno ao consultar")
+
+# Serve o index.html na raiz 
+@app.get("/", include_in_schema=False)
+def serve_index():
+    return FileResponse("front/index.html")
+
+# Catch-all para SPA (caso o usuário dê refresh ou acesse outra URL)
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_spa(full_path: str):
+    return FileResponse("front/index.html")
 
 if __name__ == "__main__":
     PORT = int(os.getenv("PORT", 8000))

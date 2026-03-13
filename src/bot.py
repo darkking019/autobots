@@ -8,8 +8,13 @@ import urllib.parse
 import os
 from pathlib import Path
 import unicodedata
-
-TIMEOUT = int(os.getenv("TIMEOUT", 60000))
+# ────────────────────────────────────────────────
+# Configurações de retry (vindas do .env ou defaults seguros)
+# Fácil de mover para um config.py depois se quiser
+# ────────────────────────────────────────────────
+MAX_RETRIES   = int(os.getenv("MAX_RETRIES",   3))
+BASE_BACKOFF  = int(os.getenv("BASE_BACKOFF",  5))  
+TIMEOUT = int(os.getenv("TIMEOUT", 9000))
 HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 
 # Pasta raiz
@@ -74,7 +79,26 @@ def accept_cookies(page):
     
     print("DEBUG: Não conseguiu aceitar cookies ou banner não apareceu")
     return False
-
+    # Função isolada para retry progressivo no carregamento inicial
+# Motivo: sites gov.br têm latência alta e timeouts frequentes
+def goto_with_retry(page, url, base_timeout=TIMEOUT, max_retries=MAX_RETRIES):
+    
+    for attempt in range(1, max_retries + 1):
+        current_timeout = base_timeout + (attempt * 20000 )       
+        print(f"🔄 Tentativa {attempt}/{max_retries} → goto {url[:80]}...")
+        
+        try:
+            page.goto(url, timeout=current_timeout, wait_until="domcontentloaded")
+            print(f"✅ Página carregada na tentativa {attempt}")
+            return True
+        except Exception as e:
+            print(f"❌ Falha na tentativa {attempt}: {str(e)[:120]}")
+            if attempt == max_retries:
+                raise
+            backoff = BASE_BACKOFF * (2 ** (attempt - 1)) + random.uniform(0, 4)
+            print(f"⏳ Aguardando {backoff:.1f}s...")
+            time.sleep(backoff)
+    return False
 
 def run_bot(parametro: str, filtro: str = None):
     data = {"panorama": "", "beneficios": []}
@@ -103,11 +127,14 @@ def run_bot(parametro: str, filtro: str = None):
             busca_url = f"https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo={termo_encoded}{filtro_encoded}"
 
             print(f"DEBUG: Acessando → {busca_url}")
-            page.goto(busca_url, timeout=TIMEOUT, wait_until="networkidle")
+            if not goto_with_retry(page, busca_url):
+    raise Exception("Falha ao carregar página de busca após todas as tentativas")
+           
+
 
             # Aceita cookies logo após entrar na página de busca
             accept_cookies(page)
-            page.wait_for_timeout(3000 + random.randint(1000, 2000))
+            page.wait_for_timeout(1000 + random.randint(1000, 2000))
 
             # Entra no perfil
             if "busca/lista" in page.url:
@@ -213,3 +240,4 @@ def run_bot(parametro: str, filtro: str = None):
         "erro": error
     }
     return json.dumps(result, ensure_ascii=False, indent=4)
+     
