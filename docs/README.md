@@ -17,7 +17,9 @@ Repositório: https://github.com/darkking019/autobots.git
 
 **Deploy ao vivo**:  
 API → https://autobots-production-8bc0.up.railway.app  
-Frontend demo → abra o `frontend/index.html`
+tela em desenvovimento, local temporario de testes:
+https://autobots-production-8bc0.up.railway.app/docs#/
+
 
 ## 🚀 Como rodar
 
