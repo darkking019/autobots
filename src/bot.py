@@ -1,24 +1,49 @@
 import json
-import random
-import base64
-from io import BytesIO
-from PIL import Image
-from playwright.sync_api import sync_playwright
-import urllib.parse
+import logging
 import os
+import random
+import asyncio
+import urllib.parse
 from pathlib import Path
-import unicodedata
-import time
-# ────────────────────────────────────────────────
-# Variáveis de ambiente e configuração
-# ────────────────────────────────────────────────
-MAX_RETRIES   = int(os.getenv("MAX_RETRIES"))
-BASE_BACKOFF  = int(os.getenv("BASE_BACKOFF"))
-TIMEOUT       = int(os.getenv("TIMEOUT"))
-HEADLESS      = os.getenv("HEADLESS", "true").lower() == "true"  
+from unicodedata import normalize
+
+import base64
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+
+logger = logging.getLogger(__name__)
+
+# ===================== BROWSER POOL GLOBAL (ASYNC) =====================
+_global_playwright = None
+_global_browser = None
+_global_lock = asyncio.Lock()
+
+async def get_browser():
+    global _global_playwright, _global_browser
+    async with _global_lock:
+        if _global_browser is None:
+            logger.info("🚀 Iniciando Browser Pool Async (1 browser reutilizável)")
+            _global_playwright = await async_playwright().start()
+            _global_browser = await _global_playwright.chromium.launch(
+                headless=os.getenv("HEADLESS", "true").lower() == "true",
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+            )
+        return _global_browser
+
+
+# ===================== CONFIGURAÇÃO =====================
+MAX_CONTEXTS = int(os.getenv("MAX_CONTEXTS", "6"))
+CONTEXT_SEMAPHORE = asyncio.Semaphore(MAX_CONTEXTS)
+
+MAX_RETRIES   = int(os.getenv("MAX_RETRIES", "5"))
+BASE_BACKOFF  = int(os.getenv("BASE_BACKOFF", "3"))
+TIMEOUT       = int(os.getenv("TIMEOUT", "60000"))
+
 EVIDENCIA_DIR = Path("evidencia")
+EVIDENCIA_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def slugify(text: str) -> str:
-    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    text = normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
     text = "".join(c if c.isalnum() or c in " -_" else "_" for c in text)
     return text.strip().replace(" ", "_").replace("__", "_")
 
@@ -28,160 +53,196 @@ def ensure_dir(person_name: str) -> Path:
     person_dir = EVIDENCIA_DIR / safe_name
     person_dir.mkdir(parents=True, exist_ok=True)
     return person_dir
-def capture_screenshot_to_base64(page):
+
+
+async def capture_screenshot_to_base64(page):
     try:
-        screenshot_bytes = page.screenshot(full_page=True, timeout=60000)
-        img = Image.open(BytesIO(screenshot_bytes))
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+        screenshot_bytes = await page.screenshot(full_page=True, timeout=30000)
+        return base64.b64encode(screenshot_bytes).decode("utf-8")
     except Exception as e:
-        print(f"DEBUG: Falha base64: {e}")
+        logger.warning(f"Falha base64: {e}")
         return None
-def save_screenshot(page, person_dir: Path, filename: str):
+
+
+async def save_screenshot(page, person_dir: Path, filename: str):
     try:
         full_path = person_dir / f"{filename}.png"
-        page.screenshot(path=str(full_path), full_page=True, timeout=60000)
+        await page.screenshot(path=str(full_path), full_page=True, timeout=30000)
     except Exception as e:
-        print(f"DEBUG: Erro ao salvar PNG: {e}")
-def accept_cookies(page):
-    
-    for tentativa in range(4):
+        logger.warning(f"Erro ao salvar PNG: {e}")
+
+
+async def accept_cookies(page):
+    for _ in range(4):
         try:
-            page.wait_for_selector('#cookiebar:not(.d-none)', state='visible', timeout=8000)
+            await page.wait_for_selector('#cookiebar:not(.d-none)', state='visible', timeout=8000)
             btn = page.locator('#accept-all-btn')
-            if btn.is_visible(timeout=3000):
-                btn.click(timeout=10000, force=True)
-                page.wait_for_timeout(2000)
-                if page.locator('#cookiebar').is_hidden(timeout=5000):
+            if await btn.is_visible(timeout=3000):
+                await btn.click(timeout=10000, force=True)
+                await page.wait_for_timeout(2000)
+                if await page.locator('#cookiebar').is_hidden(timeout=5000):
                     return True
         except:
             pass
-        page.wait_for_timeout(1500 + random.randint(500, 1500))
-    print("DEBUG: Não conseguiu aceitar cookies ou banner não apareceu")
+        await page.wait_for_timeout(1500 + random.randint(500, 1500))
     return False
-def goto_with_retry(page, url, base_timeout=TIMEOUT, max_retries=MAX_RETRIES):
-    """Retry progressivo no carregamento inicial (principal causa de falha)"""
-    for attempt in range(1, max_retries + 1):
-        current_timeout = base_timeout + (attempt * 20000)
-        print(f"🔄 Tentativa {attempt}/{max_retries} → goto {url[:80]}...")
 
+
+async def goto_with_retry(page, url):
+    for attempt in range(1, MAX_RETRIES + 1):
+        current_timeout = TIMEOUT + (attempt * 20000)
+        logger.info(f"🔄 Tentativa {attempt}/{MAX_RETRIES} → goto {url[:80]}...")
         try:
-            page.goto(url, timeout=current_timeout, wait_until="domcontentloaded")
-            print(f"✅ Página carregada na tentativa {attempt}")
+            await page.goto(url, timeout=current_timeout, wait_until="domcontentloaded")
+            logger.info(f"✅ Página carregada na tentativa {attempt}")
             return True
         except Exception as e:
-            print(f"❌ Falha na tentativa {attempt}: {str(e)[:120]}")
-            if attempt == max_retries:
-                raise Exception(f"Falha ao carregar '{url}' após {max_retries} tentativas")
-            backoff = BASE_BACKOFF * (2 ** (attempt - 1)) + random.uniform(0, 4)
-            print(f"⏳ Aguardando {backoff:.1f}s...")
-            time.sleep(backoff)
+            logger.warning(f"❌ Falha na tentativa {attempt}: {str(e)[:120]}")
+            if attempt == MAX_RETRIES:
+                raise
+            await asyncio.sleep(BASE_BACKOFF * (2 ** (attempt - 1)) + random.uniform(0, 4))
     return False
-def run_bot(parametro: str, filtro: str = None):
-    """Função principal do bot - usada pela API e pelo CLI"""
-    data = {"panorama": "", "beneficios": []}
-    evidencias = []
-    error = None
-    person_name = parametro.strip().upper()
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=HEADLESS)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+
+
+async def run_bot(parametro: str, filtro: str = None):
+    await CONTEXT_SEMAPHORE.acquire()
+    try:
+        data = {"panorama": "", "beneficios": []}
+        evidencias = []
+        error = None
+        person_name = parametro.strip().upper()
+
+        logger.info(f"🚀 Bot Async iniciado para: {parametro} (contextos simultâneos: {MAX_CONTEXTS})")
+
+        browser = await get_browser()
+        context = await browser.new_context(
+            viewport={"width": 1366, "height": 768},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
             bypass_csp=True,
         )
-        page = context.new_page()
-        context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
-        print("DEBUG: Stealth aplicado")
+        page = await context.new_page()
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
+        logger.debug("Stealth aplicado")
+
         try:
             termo_encoded = urllib.parse.quote(parametro.strip())
             filtro_encoded = f"&filtro={urllib.parse.quote(filtro.strip())}" if filtro else ""
             busca_url = f"https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo={termo_encoded}{filtro_encoded}"
-            print(f"DEBUG: Acessando → {busca_url}")
-            if not goto_with_retry(page, busca_url):
-                raise Exception("Falha ao carregar página de busca após todas as tentativas")
-            accept_cookies(page)
-            page.wait_for_timeout(3000 + random.randint(1000, 2000))
+
+            if not await goto_with_retry(page, busca_url):
+                raise Exception("Falha ao carregar página de busca")
+
+            await accept_cookies(page)
+            await page.wait_for_timeout(random.randint(2500, 4000))
+
             if "busca/lista" in page.url:
-                print("DEBUG: Página de resultados")
-                page.wait_for_selector('a[href^="/busca/pessoa-fisica/"]', timeout=40000)
-                pessoa_link = page.locator('a[href^="/busca/pessoa-fisica/"]').first
-                if pessoa_link.count() > 0:
-                    person_name = pessoa_link.inner_text().strip().upper() or person_name
-                    print(f"DEBUG: Pessoa detectada: {person_name}")
-                    pessoa_link.scroll_into_view_if_needed()
-                    page.wait_for_timeout(1200)
-                    pessoa_link.hover(timeout=4000)
-                    pessoa_link.click(timeout=TIMEOUT, force=True, position={"x": 12, "y": 12})
-                    page.wait_for_load_state("networkidle", timeout=TIMEOUT)
-                    accept_cookies(page)
-                    page.wait_for_timeout(4000 + random.randint(1000, 3000))
-                    print(f"DEBUG: Entrou no perfil → {page.url}")
-                    person_dir = ensure_dir(person_name)
-                    panorama_base64 = capture_screenshot_to_base64(page)
-                    if panorama_base64:
-                        evidencias.append({"tipo": "panorama", "descricao": "Perfil inicial", "base64": panorama_base64})
-                    save_screenshot(page, person_dir, "01_panorama_inicial")
+                try:
+                    await page.wait_for_selector('a[href^="/busca/pessoa-fisica/"]', timeout=15000)
+                except PlaywrightTimeout:
+                    logger.warning(f"Nenhum resultado para {parametro}")
+                    error = f"Nenhum resultado encontrado para '{parametro}'"
+                else:
+                    pessoa_link = page.locator('a[href^="/busca/pessoa-fisica/"]').first
+                    if await pessoa_link.count() > 0:
+                        person_name = (await pessoa_link.inner_text()).strip().upper() or person_name
+                        await pessoa_link.scroll_into_view_if_needed()
+                        await page.wait_for_timeout(1200)
+                        await pessoa_link.hover()
+                        await pessoa_link.click(force=True)
+                        await page.wait_for_load_state("networkidle", timeout=TIMEOUT)
+
+                        person_dir = ensure_dir(person_name)
+                        panorama_base64 = await capture_screenshot_to_base64(page)
+                        if panorama_base64:
+                            evidencias.append({"tipo": "panorama", "descricao": "Perfil inicial", "base64": panorama_base64})
+                        await save_screenshot(page, person_dir, "01_panorama_inicial")
+
             # Panorama texto
             try:
                 panorama_title = page.get_by_text("Panorama da relação da pessoa com o Governo Federal")
-                if panorama_title.is_visible(timeout=15000):
-                    container = panorama_title.locator('xpath=following-sibling::*[1]')
-                    data["panorama"] = container.inner_text(timeout=TIMEOUT).strip()
-                    print("DEBUG: Panorama capturado")
+                if await panorama_title.is_visible(timeout=15000):
+                    data["panorama"] = (await panorama_title.locator('xpath=following-sibling::*[1]').inner_text(timeout=TIMEOUT)).strip()
             except:
                 data["panorama"] = "Panorama não encontrado"
-            # Accordion
+
+            # Accordion inicial
             accordion = page.get_by_role("button").filter(has_text="RECEBIMENTOS DE RECURSOS")
-            if accordion.count() > 0:
-                accordion.first.click(force=True, timeout=TIMEOUT)
-                page.wait_for_timeout(4000 + random.randint(1000, 3000))
-                print("DEBUG: Accordion expandido")
-            # Detalhes
-            detalhar_links = page.locator('a, button').filter(has_text="Detalhar")
-            count = detalhar_links.count()
-            print(f"DEBUG: {count} 'Detalhar' encontrados")
-            person_dir = ensure_dir(person_name)
-            for i in range(min(count, 8)):
+            if await accordion.count() > 0:
+                await accordion.first.click(force=True)
+                await page.wait_for_timeout(random.randint(2500, 3500))
+
+            # === LOOP DETALHES ===
+            for i in range(8):
                 try:
+                    detalhar_links = page.locator('a.br-button.secondary:has-text("Detalhar")')
+                    count = await detalhar_links.count()
+                    if i >= count:
+                        break
+
                     link = detalhar_links.nth(i)
+
+                    if not await link.is_visible(timeout=3000):
+                        await page.mouse.wheel(0, random.randint(400, 700))
+                        await page.wait_for_timeout(1200)
+                        if not await link.is_visible(timeout=3000):
+                            logger.warning(f"Detalhar {i+1} ainda invisível → pulando")
+                            continue
+
                     nome = "Benefício"
                     try:
-                        nome = link.locator("xpath=preceding::strong[1]").inner_text(timeout=5000).strip()
+                        nome = (await link.locator("xpath=preceding::strong[1]").inner_text(timeout=3000)).strip()
                     except:
                         pass
-                    print(f"DEBUG: Detalhe {i+1}: {nome}")
-                    link.click(timeout=TIMEOUT, force=True)
-                    page.wait_for_timeout(6000 + random.randint(1000, 3000))
-                    accept_cookies(page)
-                    detalhes = page.locator('.br-table, main, section, .container').first.inner_text(timeout=TIMEOUT).strip() or "Sem detalhes"
+
+                    logger.debug(f"Detalhe {i+1}: {nome}")
+
+                    await link.scroll_into_view_if_needed(timeout=8000)
+                    await page.mouse.move(random.randint(200, 600), random.randint(200, 500))
+                    await page.wait_for_timeout(random.uniform(1.2, 2.8))
+
+                    await link.click(timeout=15000, force=True)
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    await page.wait_for_timeout(random.randint(2000, 3500))
+                    await accept_cookies(page)
+
+                    detalhes = (await page.locator('.br-table, main, section').first.inner_text(timeout=TIMEOUT)).strip() or "Sem detalhes"
                     data["beneficios"].append({"nome": nome, "detalhes": detalhes, "link": page.url})
-                    detalhe_base64 = capture_screenshot_to_base64(page)
+
+                    detalhe_base64 = await capture_screenshot_to_base64(page)
                     if detalhe_base64:
                         evidencias.append({"tipo": "beneficio", "nome": nome, "descricao": f"Detalhes {nome}", "base64": detalhe_base64})
-                    save_screenshot(page, person_dir, f"{i+2:02d}_detalhe_{slugify(nome)}")
-                    page.go_back()
-                    page.wait_for_timeout(4000)
+                    await save_screenshot(page, ensure_dir(person_name), f"{i+2:02d}_detalhe_{slugify(nome)}")
+
+                    await page.go_back()
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+
+                    accordion = page.get_by_role("button").filter(has_text="RECEBIMENTOS DE RECURSOS")
+                    if await accordion.count() > 0:
+                        if await accordion.first.get_attribute("aria-expanded") == "false":
+                            await accordion.first.click(force=True)
+                            await page.wait_for_timeout(1500)
+
+                    await page.wait_for_timeout(random.randint(1500, 2500))
+
                 except Exception as e:
-                    print(f"DEBUG: Erro detalhe {i+1}: {str(e)}")
+                    logger.warning(f"Erro detalhe {i+1}: {e}")
                     continue
-                    
-            final_base64 = capture_screenshot_to_base64(page)
+
+            # Screenshot final
+            final_base64 = await capture_screenshot_to_base64(page)
             if final_base64:
                 evidencias.append({"tipo": "final", "descricao": "Resumo final", "base64": final_base64})
-            save_screenshot(page, person_dir, "99_final_resumo")
+            await save_screenshot(page, ensure_dir(person_name), "99_final_resumo")
+
         except Exception as e:
             error = str(e)
-            print(f"DEBUG: Erro geral: {str(e)}")
+            logger.error(f"Erro geral {parametro}: {e}")
         finally:
-            browser.close()
-    result = {
-        "dados": data,
-        "evidencias": evidencias,
-        "erro": error
-    }
-    return json.dumps(result, ensure_ascii=False, indent=4)
-     
+            await context.close()
+
+        return json.dumps({"dados": data, "evidencias": evidencias, "erro": error}, ensure_ascii=False, indent=4)
+
+    finally:
+        CONTEXT_SEMAPHORE.release()

@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  mostqi-rpa:
+    build: .
+    container_name: mostqi-rpa
+    ports:
+      - "8000:8000"
+
+    # ==================== CONFIGURAÇÃO DE ALTA EFICIÊNCIA ====================
+    shm_size: 2gb                    # ← DOBRADO (resolve 90% dos "not visible")
+    mem_limit: 6g                    # ← Seguro (pico real fica ~4.2 GB)
+    cpus: 4.0                        # ← 4 cores (deixa 2 pro Windows + outros apps)
+
+    environment:
+      - HEADLESS=true
+      - MAX_CONTEXTS=6               # ← AQUI É O VALOR QUE O BOT VAI USAR
+      - MAX_RETRIES=5
+      - BASE_BACKOFF=3
+      - TIMEOUT=60000
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      - ./evidencia:/app/evidencia
+      - ./logs:/app/logs
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

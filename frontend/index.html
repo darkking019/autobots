@@ -40,7 +40,7 @@ function App() {
 
     const promises = lines.map(async (param, index) => {
       try {
-        const res = await fetch("http://localhost:8000/consultar", {
+      const res = await fetch("/consultar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ param: param.trim(), filtro: null })
@@ -76,7 +76,7 @@ function App() {
     setResults([]);  // limpa resultados anteriores
 
     try {
-      const res = await fetch("http://localhost:8000/consultar-planilha", {
+      const res = await fetch("/consultar-planilha", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

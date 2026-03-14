@@ -50,9 +50,9 @@ Hiperautomacao/
 │   ├── main.py                ← CLI (argparse + ThreadPool)
 │   ├── bot.py                 ← função run_bot() pura (extraia do main)
 │   ├── api.py                 ← FastAPI
-│   └── utils.py               ← capture_screenshot + generate_json
-│
-├── frontend/
+│   ├── utils.py               ← capture_screenshot + generate_json
+│   └──sheets.py
+├── front/
 │   └── index.html             ← seu React simples (demo)
 │
 ├── tests/
