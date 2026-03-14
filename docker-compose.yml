@@ -7,19 +7,19 @@ services:
     ports:
       - "8000:8000"
 
-    # ==================== CONFIGURAÇÃO DE ALTA EFICIÊNCIA ====================
-    shm_size: 2gb                    # ← DOBRADO (resolve 90% dos "not visible")
-    mem_limit: 6g                    # ← Seguro (pico real fica ~4.2 GB)
-    cpus: 4.0                        # ← 4 cores (deixa 2 pro Windows + outros apps)
+    
+    shm_size: 2gb                   
+    mem_limit: 6g                    
+    cpus: 4.0                        
 
     environment:
       - HEADLESS=true
-      - MAX_CONTEXTS=6               # ← AQUI É O VALOR QUE O BOT VAI USAR
+      - MAX_CONTEXTS=6             
       - MAX_RETRIES=5
       - BASE_BACKOFF=3
       - TIMEOUT=60000
       - PYTHONUNBUFFERED=1
-
+      - GOOGLE_CREDENTIALS=${GOOGLE_CREDENTIALS}
     volumes:
       - ./evidencia:/app/evidencia
       - ./logs:/app/logs

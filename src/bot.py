@@ -73,19 +73,15 @@ async def save_screenshot(page, person_dir: Path, filename: str):
 
 
 async def accept_cookies(page):
-    for _ in range(4):
-        try:
-            await page.wait_for_selector('#cookiebar:not(.d-none)', state='visible', timeout=8000)
-            btn = page.locator('#accept-all-btn')
-            if await btn.is_visible(timeout=3000):
-                await btn.click(timeout=10000, force=True)
-                await page.wait_for_timeout(2000)
-                if await page.locator('#cookiebar').is_hidden(timeout=5000):
-                    return True
-        except:
-            pass
-        await page.wait_for_timeout(1500 + random.randint(500, 1500))
-    return False
+    try:
+        # Seletor real atual (funciona em todas as páginas)
+        btn = page.get_by_text("Aceitar todos", exact=True)
+        if await btn.is_visible(timeout=4000):
+            await btn.click(timeout=8000)
+            await page.wait_for_timeout(1500)
+            logger.debug("Cookies aceitos")
+    except:
+        pass  
 
 
 async def goto_with_retry(page, url):
@@ -112,129 +108,202 @@ async def run_bot(parametro: str, filtro: str = None):
         error = None
         person_name = parametro.strip().upper()
 
-        logger.info(f"🚀 Bot Async iniciado para: {parametro} (contextos simultâneos: {MAX_CONTEXTS})")
+        logger.info(f"🚀 Bot iniciado para: {parametro}")
 
         browser = await get_browser()
         context = await browser.new_context(
             viewport={"width": 1366, "height": 768},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
             bypass_csp=True,
+            java_script_enabled=True,
+            has_touch=False,
         )
         page = await context.new_page()
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
-        logger.debug("Stealth aplicado")
 
         try:
+            # ===================== BUSCA =====================
             termo_encoded = urllib.parse.quote(parametro.strip())
-            filtro_encoded = f"&filtro={urllib.parse.quote(filtro.strip())}" if filtro else ""
-            busca_url = f"https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo={termo_encoded}{filtro_encoded}"
-
+            busca_url = f"https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo={termo_encoded}"
             if not await goto_with_retry(page, busca_url):
                 raise Exception("Falha ao carregar página de busca")
 
             await accept_cookies(page)
             await page.wait_for_timeout(random.randint(2500, 4000))
 
-            if "busca/lista" in page.url:
+            # ===================== ABRIR PERFIL (COM RETRY) =====================
+            profile_opened = False
+            for attempt in range(3):
                 try:
                     await page.wait_for_selector('a[href^="/busca/pessoa-fisica/"]', timeout=15000)
-                except PlaywrightTimeout:
-                    logger.warning(f"Nenhum resultado para {parametro}")
-                    error = f"Nenhum resultado encontrado para '{parametro}'"
-                else:
                     pessoa_link = page.locator('a[href^="/busca/pessoa-fisica/"]').first
-                    if await pessoa_link.count() > 0:
-                        person_name = (await pessoa_link.inner_text()).strip().upper() or person_name
-                        await pessoa_link.scroll_into_view_if_needed()
-                        await page.wait_for_timeout(1200)
-                        await pessoa_link.hover()
-                        await pessoa_link.click(force=True)
-                        await page.wait_for_load_state("networkidle", timeout=TIMEOUT)
+                    if await pessoa_link.count() == 0:
+                        raise PlaywrightTimeout("Nenhum link encontrado")
 
-                        person_dir = ensure_dir(person_name)
-                        panorama_base64 = await capture_screenshot_to_base64(page)
-                        if panorama_base64:
-                            evidencias.append({"tipo": "panorama", "descricao": "Perfil inicial", "base64": panorama_base64})
-                        await save_screenshot(page, person_dir, "01_panorama_inicial")
+                    person_name = (await pessoa_link.inner_text()).strip().upper() or person_name
+                    await pessoa_link.scroll_into_view_if_needed()
+                    await page.wait_for_timeout(random.uniform(1.5, 3.0))
+                    await pessoa_link.hover()
+                    await pessoa_link.click()
 
-            # Panorama texto
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                    await asyncio.sleep(2.5)  # espera humana extra (anti-bot)
+
+                    # Verificação inteligente
+                    if "pessoa-fisica" in page.url and page.url != "https://portaldatransparencia.gov.br/":
+                        profile_opened = True
+                        break
+                    else:
+                        logger.warning(f"Tentativa {attempt+1}: redirect detectado → retry")
+                        await page.go_back()
+                except Exception as e:
+                    logger.warning(f"Tentativa {attempt+1} falhou: {e}")
+                    if attempt == 2:
+                        raise
+
+            if not profile_opened:
+                raise Exception("Não foi possível abrir o perfil (redirect persistente)")
+
+            # ===================== CAPTURA INICIAL =====================
+            person_dir = ensure_dir(person_name)
+            panorama_base64 = await capture_screenshot_to_base64(page)
+            if panorama_base64:
+                evidencias.append({"tipo": "panorama", "descricao": "Perfil inicial", "base64": panorama_base64})
+            await save_screenshot(page, person_dir, "01_panorama_inicial")
+
+            profile_url = page.url  # guardamos para referência
+
+            # ===================== PANORAMA TEXTO =====================
             try:
                 panorama_title = page.get_by_text("Panorama da relação da pessoa com o Governo Federal")
-                if await panorama_title.is_visible(timeout=15000):
-                    data["panorama"] = (await panorama_title.locator('xpath=following-sibling::*[1]').inner_text(timeout=TIMEOUT)).strip()
+                if await panorama_title.is_visible(timeout=10000):
+                    data["panorama"] = (await panorama_title.locator('xpath=following-sibling::*[1]').inner_text(timeout=15000)).strip()
             except:
                 data["panorama"] = "Panorama não encontrado"
 
-            # Accordion inicial
-            accordion = page.get_by_role("button").filter(has_text="RECEBIMENTOS DE RECURSOS")
-            if await accordion.count() > 0:
-                await accordion.first.click(force=True)
-                await page.wait_for_timeout(random.randint(2500, 3500))
+            # ===================== PÓS-PERFIL: COOKIES + ACCORDION + DETALHES =====================
+            await accept_cookies(page)  # re-executa caso o banner apareça após abrir o perfil
+            await page.wait_for_timeout(random.uniform(1.0, 2.0))
 
-            # === LOOP DETALHES ===
-            for i in range(8):
+            # ===================== ABRIR ACCORDION (robusto) =====================
+            try:
+                await page.wait_for_selector('button:has-text("Recebimentos de recursos")', timeout=15000)
+                accordion_btn = page.locator('button:has-text("Recebimentos de recursos")').first
+                
+                if await accordion_btn.is_visible(timeout=5000):
+                    await accordion_btn.click(timeout=8000)
+                    logger.info("✅ Accordion 'Recebimentos de recursos' aberto com sucesso")
+                    
+                    await page.wait_for_timeout(random.uniform(1.5, 2.5))
+                    
+                    # Screenshot do accordion aberto
+                    acc_base64 = await capture_screenshot_to_base64(page)
+                    if acc_base64:
+                        evidencias.append({"tipo": "accordion", "descricao": "Recebimentos de recursos expandido", "base64": acc_base64})
+                    await save_screenshot(page, person_dir, "02_accordion_recebimentos_expandido")
+                    
+                    # Espera os links Detalhar carregarem dentro do accordion
+                    await page.wait_for_selector('#accordion-recebimentos-recursos a:has-text("Detalhar")', timeout=15000)
+            except PlaywrightTimeout:
+                logger.warning("Accordion 'Recebimentos de recursos' não encontrado ou já aberto - continuando...")
+            except Exception as e:
+                logger.warning(f"Erro ao abrir accordion: {e}")
+
+# ===================== PANORAMA TEXTO =====================
+            try:
+                panorama_title = page.get_by_text("Panorama da relação da pessoa com o Governo Federal")
+                if await panorama_title.is_visible(timeout=10000):
+                    data["panorama"] = (await panorama_title.locator('xpath=following-sibling::*[1]').inner_text(timeout=15000)).strip()
+            except:
+                data["panorama"] = "Panorama não encontrado"
+
+            # ===================== VERIFICAÇÃO + ABERTURA DO ACCORDION =====================
+            profile_url = page.url  # ← salva para voltar depois de redirect
+
+            accordion_aberto = False
+            for tentativa in range(3):  # até 3 tentativas de abrir
                 try:
-                    detalhar_links = page.locator('a.br-button.secondary:has-text("Detalhar")')
-                    count = await detalhar_links.count()
-                    if i >= count:
+                    await page.wait_for_selector('button:has-text("Recebimentos de recursos")', timeout=12000)
+                    accordion_btn = page.locator('button:has-text("Recebimentos de recursos")').first
+
+                    # Se o botão existe e está visível
+                    if await accordion_btn.is_visible(timeout=5000):
+                        await accordion_btn.click(delay=random.randint(200, 600))
+                        await page.wait_for_timeout(random.uniform(1.2, 2.8))
+
+                        # ✅ CONFERÊNCIA REAL: espera os links Detalhar aparecerem dentro do accordion
+                        await page.wait_for_selector(
+                            '#accordion-recebimentos-recursos a:has-text("Detalhar")',
+                            timeout=15000,
+                            state="visible"
+                        )
+                        logger.info(f"✅ Accordion 'Recebimentos de recursos' aberto com sucesso (tentativa {tentativa+1})")
+                        accordion_aberto = True
                         break
 
-                    link = detalhar_links.nth(i)
+                except Exception as e:
+                    logger.warning(f"Tentativa {tentativa+1} de abrir accordion falhou: {e}")
+                    await page.wait_for_timeout(1500)
 
-                    if not await link.is_visible(timeout=3000):
-                        await page.mouse.wheel(0, random.randint(400, 700))
-                        await page.wait_for_timeout(1200)
-                        if not await link.is_visible(timeout=3000):
-                            logger.warning(f"Detalhar {i+1} ainda invisível → pulando")
-                            continue
+            if not accordion_aberto:
+                logger.error("❌ Não foi possível abrir o accordion após 3 tentativas")
+                # continua mesmo assim (pode ter dados em outros lugares)
 
-                    nome = "Benefício"
-                    try:
-                        nome = (await link.locator("xpath=preceding::strong[1]").inner_text(timeout=3000)).strip()
-                    except:
-                        pass
+            # ===================== LOOP DETALHES – COM TRATAMENTO DE REDIRECT =====================
+            for i in range(10):
+                try:
+                    detalhar_selector = '#accordion-recebimentos-recursos a:has-text("Detalhar"):visible'
+                    await page.wait_for_selector(detalhar_selector, timeout=10000, state="visible")
+                    links = page.locator(detalhar_selector)
 
-                    logger.debug(f"Detalhe {i+1}: {nome}")
+                    if await links.count() <= i:
+                        break
 
+                    link = links.nth(i)
+                    await link.wait_for(state="visible", timeout=8000)
                     await link.scroll_into_view_if_needed(timeout=8000)
-                    await page.mouse.move(random.randint(200, 600), random.randint(200, 500))
-                    await page.wait_for_timeout(random.uniform(1.2, 2.8))
+                    await page.wait_for_timeout(random.uniform(800, 1800))
 
-                    await link.click(timeout=15000, force=True)
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                    await page.wait_for_timeout(random.randint(2000, 3500))
-                    await accept_cookies(page)
+                    nome = (await link.locator("xpath=preceding::strong[1]").inner_text(timeout=4000)).strip() or f"Benefício {i+1}"
 
+                    await link.click(delay=random.randint(150, 400), timeout=12000)
+                    await page.wait_for_load_state("networkidle", timeout=25000)
+
+                    # Espera conteúdo carregar
+                    await page.wait_for_selector('.br-table, table, section:has-text("Valor")', timeout=15000)
+
+                    # Tratamento de redirect
+                    if not page.url.startswith("https://portaldatransparencia.gov.br/beneficios/") or "busca/lista" in page.url:
+                        logger.warning(f"Redirect detectado no detalhe {i+1} → voltando para perfil")
+                        await page.goto(profile_url, wait_until="networkidle", timeout=20000)
+                        await page.wait_for_timeout(random.uniform(1500, 3000))
+                        continue
+
+                    # Extração
                     detalhes = (await page.locator('.br-table, main, section').first.inner_text(timeout=TIMEOUT)).strip() or "Sem detalhes"
                     data["beneficios"].append({"nome": nome, "detalhes": detalhes, "link": page.url})
 
+                    # Screenshot
                     detalhe_base64 = await capture_screenshot_to_base64(page)
                     if detalhe_base64:
                         evidencias.append({"tipo": "beneficio", "nome": nome, "descricao": f"Detalhes {nome}", "base64": detalhe_base64})
-                    await save_screenshot(page, ensure_dir(person_name), f"{i+2:02d}_detalhe_{slugify(nome)}")
+                    await save_screenshot(page, person_dir, f"{i+3:02d}_detalhe_{slugify(nome)}")
 
-                    await page.go_back()
-                    await page.wait_for_load_state("networkidle", timeout=10000)
-
-                    accordion = page.get_by_role("button").filter(has_text="RECEBIMENTOS DE RECURSOS")
-                    if await accordion.count() > 0:
-                        if await accordion.first.get_attribute("aria-expanded") == "false":
-                            await accordion.first.click(force=True)
-                            await page.wait_for_timeout(1500)
-
-                    await page.wait_for_timeout(random.randint(1500, 2500))
+                    # Volta para o perfil (obrigatório por causa do redirect)
+                    await page.goto(profile_url, wait_until="networkidle", timeout=20000)
+                    await page.wait_for_timeout(random.uniform(1200, 2800))
 
                 except Exception as e:
-                    logger.warning(f"Erro detalhe {i+1}: {e}")
+                    logger.warning(f"Erro no detalhe {i+1}: {e}")
                     continue
 
-            # Screenshot final
+            # ===================== FINAL =====================
             final_base64 = await capture_screenshot_to_base64(page)
             if final_base64:
                 evidencias.append({"tipo": "final", "descricao": "Resumo final", "base64": final_base64})
-            await save_screenshot(page, ensure_dir(person_name), "99_final_resumo")
+            await save_screenshot(page, person_dir, "99_final_resumo")
 
         except Exception as e:
             error = str(e)
