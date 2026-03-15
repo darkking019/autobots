@@ -231,7 +231,11 @@ async def run_bot(parametro: str, filtro: str = None):
         finally:
             await context.close()
 
-        return json.dumps({"dados": data, "evidencias": evidencias, "erro": error}, ensure_ascii=False, indent=4)
+        return {
+            "dados": data,
+            "evidencias": evidencias,
+            "erro": error
+        }
 
     finally:
         CONTEXT_SEMAPHORE.release()

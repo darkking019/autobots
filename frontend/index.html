@@ -67,7 +67,7 @@
         <div class="flex">
             <!-- SIDEBAR -->
             <div class="w-96 bg-white border-r border-slate-200 min-h-screen p-8">
-                <!-- TAB MANUAL (AGORA MULTI) -->
+                <!-- TAB MANUAL -->
                 <div id="panel-manual">
                     <div class="mb-6">
                         <label class="block text-sm font-medium text-slate-500 mb-2">
@@ -102,14 +102,13 @@
                     </button>
                 </div>
 
-                <!-- TAB PLANILHA (mantida igual) -->
+                <!-- TAB PLANILHA -->
                 <div id="panel-planilha" class="hidden">
-                    <!-- mesmo conteúdo da versão anterior -->
                     <div class="space-y-6">
                         <div>
                             <label class="block text-sm font-medium text-slate-500 mb-2">ID da Planilha Google</label>
-                            <input id="planilha-id" value="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" 
-                                   class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 text-sm font-mono">
+                          <input id="planilha-id" value="1MlyK5Z__yb8YAm9sYWA0xAIeu_Y6jGws5YWtP_lVI6w" 
+       class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 text-sm font-mono">
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
@@ -176,7 +175,7 @@
         </div>
     </div>
 
-    <!-- MODAL (igual anterior) -->
+    <!-- MODAL -->
     <div id="modal" onclick="if(event.target.id==='modal') closeModal()" 
          class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
         <div onclick="event.stopImmediatePropagation()" 
@@ -258,7 +257,6 @@
             try {
                 const filtro = document.getElementById('manual-filtro').value.trim() || null;
 
-                // 🔥 PROCESSAMENTO PARALELO (backend controla semaphore)
                 const promises = params.map(param => 
                     apiPost('/consultar', { param, filtro })
                 );
@@ -282,7 +280,7 @@
             }
         }
 
-        // ================== CONTADOR LIVE NO TEXTAREA ==================
+        // ================== CONTADOR LIVE ==================
         function updateParamCount() {
             const textarea = document.getElementById('manual-params');
             const count = textarea.value.trim().split('\n').filter(l => l.trim()).length;
@@ -294,7 +292,7 @@
             updateParamCount();
         }
 
-        // ================== PLANILHA (mantida) ==================
+        // ================== PLANILHA ==================
         async function consultarPlanilha() {
             showLoading(true);
             try {
@@ -329,7 +327,7 @@
             showToast('Demo com 2 registros carregado', 'success');
         }
 
-        // ================== RENDER + MODAL (igual anterior, só mantido) ==================
+        // ================== RENDER + MODAL ==================
         function renderResults() {
             const container = document.getElementById('results-container');
             container.innerHTML = '';
