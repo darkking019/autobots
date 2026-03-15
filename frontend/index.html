@@ -1,232 +1,437 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <title>Consulta Portal da Transparência - mostQI</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Transparência • mostQI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+        
+        :root { --primary: #1e40af; }
+        
+        .tail-container { font-family: 'Inter', system-ui, sans-serif; }
+        .logo-font { font-family: 'Space Grotesk', sans-serif; }
 
-  <style>
-    body { font-family: system-ui, sans-serif; }
-    .card { transition: all 0.2s; }
-    .card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
-    .evidence-img { max-height: 500px; }
-    textarea { resize: vertical; min-height: 120px; }
-  </style>
+        .card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card:hover { transform: translateY(-8px); box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.15); }
+
+        .thumb { transition: all 0.2s ease; }
+        .thumb:hover { transform: scale(1.05); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.2); }
+
+        .modal { animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes modalPop { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="tail-container bg-slate-50 text-slate-800">
+    <div class="max-w-7xl mx-auto">
+        <!-- HEADER -->
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+            <div class="px-8 py-6 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 bg-blue-700 rounded-2xl flex items-center justify-center text-white text-2xl font-bold logo-font">T</div>
+                    <div>
+                        <h1 class="text-2xl font-semibold logo-font tracking-tight">Portal de Transparência</h1>
+                        <p class="text-xs text-slate-500 -mt-1">mostQI RPA</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-8 text-sm">
+                    <button onclick="switchTab(0)" id="tab-manual" 
+                            class="tab-btn px-5 py-2.5 rounded-3xl font-medium flex items-center gap-2 active bg-blue-700 text-white">
+                        <i class="fas fa-users"></i>
+                        <span>Consulta Manual (Múltipla)</span>
+                    </button>
+                    <button onclick="switchTab(1)" id="tab-planilha"
+                            class="tab-btn px-5 py-2.5 rounded-3xl font-medium flex items-center gap-2">
+                        <i class="fas fa-table"></i>
+                        <span>Via Planilha</span>
+                    </button>
+                    <button onclick="loadDemo()" 
+                            class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-3xl font-medium flex items-center gap-2 transition-colors">
+                        <i class="fas fa-play"></i>
+                        <span>Demo Mode</span>
+                    </button>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <div id="status" class="px-4 py-1.5 text-xs font-medium rounded-3xl bg-slate-100 text-slate-500 flex items-center gap-2">
+                        <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        Conectado
+                    </div>
+                </div>
+            </div>
+        </header>
 
-<div id="root"></div>
+        <div class="flex">
+            <!-- SIDEBAR -->
+            <div class="w-96 bg-white border-r border-slate-200 min-h-screen p-8">
+                <!-- TAB MANUAL (AGORA MULTI) -->
+                <div id="panel-manual">
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-slate-500 mb-2">
+                            Parâmetros (um por linha — CPF, Nome ou NIS)
+                        </label>
+                        <textarea id="manual-params" rows="10"
+                            class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 resize-none text-base font-mono leading-relaxed"
+                            placeholder="123.456.789-00&#10;João Silva Santos&#10;98765432109"></textarea>
+                        <div class="text-xs text-slate-400 mt-2 flex justify-between">
+                            <span id="count-params">0 parâmetros</span>
+                            <span class="text-blue-600 cursor-pointer hover:underline" onclick="clearTextarea()">limpar</span>
+                        </div>
+                    </div>
 
-<script type="text/babel">
-const { useState } = React;
+                    <div class="mb-8">
+                        <label class="block text-sm font-medium text-slate-500 mb-2">Filtro opcional (aplicado em todos)</label>
+                        <input id="manual-filtro" 
+                               class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600"
+                               placeholder="Ex: benefício específico" type="text">
+                    </div>
 
-function App() {
-  const [paramsText, setParamsText] = useState("");
-  const [planilhaId, setPlanilhaId] = useState("");
-  const [limitePlanilha, setLimitePlanilha] = useState("50");
-  const [results, setResults] = useState([]);           // array de { param, loading, data, error }
-  const [globalLoading, setGlobalLoading] = useState(false);
+                    <div class="mb-8">
+                        <label class="block text-sm font-medium text-slate-500 mb-2">Limite máximo de consultas</label>
+                        <input id="manual-limite" type="number" value="10" min="1" max="50"
+                               class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 text-center font-semibold">
+                    </div>
 
-  // Função para consultas manuais (textarea) - já existia
-  async function consultar() {
-    const lines = paramsText.trim().split("\n").filter(line => line.trim() !== "");
-    if (lines.length === 0) return alert("Digite pelo menos um nome/CPF/NIS");
+                    <button onclick="consultarManual()" 
+                            class="w-full bg-blue-700 hover:bg-blue-800 text-white py-5 rounded-3xl font-semibold flex items-center justify-center gap-3 transition-all active:scale-95">
+                        <i class="fas fa-search"></i>
+                        <span id="btn-text">Consultar Agora</span>
+                    </button>
+                </div>
 
-    setGlobalLoading(true);
-    setResults(lines.map(param => ({ param, loading: true, data: null, error: null })));
+                <!-- TAB PLANILHA (mantida igual) -->
+                <div id="panel-planilha" class="hidden">
+                    <!-- mesmo conteúdo da versão anterior -->
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-500 mb-2">ID da Planilha Google</label>
+                            <input id="planilha-id" value="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" 
+                                   class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 text-sm font-mono">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-500 mb-2">Aba</label>
+                                <input id="planilha-aba" value="Sheet1" class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-500 mb-2">Coluna</label>
+                                <input id="planilha-coluna" value="A" maxlength="1" class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600 text-center font-bold">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-500 mb-2">Limite</label>
+                                <input id="planilha-limite" type="number" value="10" class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-500 mb-2">Linha inicial</label>
+                                <input id="planilha-start" type="number" value="2" class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-3xl focus:outline-none focus:border-blue-600">
+                            </div>
+                        </div>
+                    </div>
 
-    const promises = lines.map(async (param, index) => {
-      try {
-      const res = await fetch("/consultar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ param: param.trim(), filtro: null })
-        });
+                    <button onclick="consultarPlanilha()" 
+                            class="mt-10 w-full bg-blue-700 hover:bg-blue-800 text-white py-5 rounded-3xl font-semibold flex items-center justify-center gap-3 transition-all active:scale-95">
+                        <i class="fas fa-file-excel"></i>
+                        <span>Processar Planilha</span>
+                    </button>
+                </div>
+            </div>
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            <!-- MAIN CONTENT -->
+            <div class="flex-1 p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div id="result-count" class="text-3xl font-semibold text-slate-400">0 resultados</div>
+                    <button onclick="clearResults()" 
+                            class="flex items-center gap-2 px-6 py-3 bg-white border border-slate-300 hover:border-red-300 text-slate-600 rounded-3xl transition-colors">
+                        <i class="fas fa-trash"></i>
+                        <span>Limpar tudo</span>
+                    </button>
+                </div>
 
-        const data = await res.json();
+                <!-- LOADING -->
+                <div id="loading" class="hidden flex flex-col items-center justify-center py-20">
+                    <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-700 rounded-full animate-spin mb-6"></div>
+                    <p class="text-slate-500 font-medium">Processando múltiplas consultas em paralelo...</p>
+                    <p id="loading-status" class="text-xs text-slate-400 mt-2">Backend controla o limite de concorrência</p>
+                </div>
 
-        setResults(prev => {
-          const newResults = [...prev];
-          newResults[index] = { param, loading: false, data, error: data.erro || null };
-          return newResults;
-        });
-      } catch (err) {
-        setResults(prev => {
-          const newResults = [...prev];
-          newResults[index] = { param, loading: false, data: null, error: err.message || "Erro desconhecido" };
-          return newResults;
-        });
-      }
-    });
+                <!-- RESULTS -->
+                <div id="results-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <!-- cards via JS -->
+                </div>
 
-    await Promise.all(promises);
-    setGlobalLoading(false);
-  }
+                <!-- EMPTY -->
+                <div id="empty-state" class="flex flex-col items-center justify-center py-32 text-center">
+                    <div class="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mb-6">
+                        <i class="fas fa-users text-4xl text-slate-300"></i>
+                    </div>
+                    <h3 class="text-xl font-medium text-slate-400">Nenhum resultado ainda</h3>
+                    <p class="text-slate-500 max-w-xs mt-3">Cole vários parâmetros na aba Manual ou processe uma planilha</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
-  // Nova função para consultar da planilha
-  async function consultarPlanilha() {
-    if (!planilhaId.trim()) return alert("Digite o ID da planilha Google Sheets");
+    <!-- MODAL (igual anterior) -->
+    <div id="modal" onclick="if(event.target.id==='modal') closeModal()" 
+         class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" 
+             class="modal bg-white rounded-3xl shadow-2xl max-w-4xl w-full mx-4 overflow-hidden">
+            <div class="px-8 py-5 border-b flex items-center justify-between bg-slate-50">
+                <div id="modal-title" class="font-semibold text-lg">Evidência</div>
+                <div class="flex items-center gap-4">
+                    <button onclick="downloadCurrentImage()" 
+                            class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-3xl font-medium transition-colors">
+                        <i class="fas fa-download"></i>
+                        <span>Baixar PNG</span>
+                    </button>
+                    <button onclick="closeModal()" class="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-2xl">✕</button>
+                </div>
+            </div>
+            <div class="p-8 bg-slate-900">
+                <img id="modal-image" class="max-h-[70vh] mx-auto rounded-2xl shadow-inner object-contain bg-white" alt="Evidência">
+            </div>
+            <div class="px-8 py-6">
+                <div id="modal-desc" class="text-slate-600 text-sm leading-relaxed"></div>
+            </div>
+        </div>
+    </div>
 
-    setGlobalLoading(true);
-    setResults([]);  // limpa resultados anteriores
+    <!-- TOAST -->
+    <div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-800 text-white px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 text-sm">
+        <i id="toast-icon" class="fas fa-check"></i>
+        <span id="toast-text"></span>
+    </div>
 
-    try {
-      const res = await fetch("/consultar-planilha", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          spreadsheet_id: planilhaId.trim(),
-          limite: parseInt(limitePlanilha) || 50,
-          worksheet_name: "Sheet1",           // pode deixar fixo ou adicionar input depois
-          coluna_param: "A",                  // coluna A = primeira coluna
-          start_row: 2                        // pula header
-        })
-      });
+    <script>
+        const API_BASE = '';
 
-      if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+        // ================== STATE ==================
+        let currentResults = [];
+        let currentModalImage = null;
+        let currentModalFilename = '';
 
-      const response = await res.json();
+        // ================== TAB ==================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active', 'bg-blue-700', 'text-white'));
+            if (tab === 0) {
+                document.getElementById('tab-manual').classList.add('active', 'bg-blue-700', 'text-white');
+                document.getElementById('panel-manual').classList.remove('hidden');
+                document.getElementById('panel-planilha').classList.add('hidden');
+            } else {
+                document.getElementById('tab-planilha').classList.add('active', 'bg-blue-700', 'text-white');
+                document.getElementById('panel-manual').classList.add('hidden');
+                document.getElementById('panel-planilha').classList.remove('hidden');
+            }
+        }
 
-      if (response.error) {
-        alert(response.error);
-        return;
-      }
+        // ================== API ==================
+        async function apiPost(endpoint, body) {
+            const res = await fetch(API_BASE + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            return typeof data === 'string' ? JSON.parse(data) : data;
+        }
 
-      // Converte os resultados da planilha para o formato que os cards entendem
-      const mappedResults = response.resultados.map(r => ({
-        param: r.param,
-        loading: false,
-        data: r,
-        error: r.erro
-      }));
+        // ================== CONSULTA MANUAL MULTI ==================
+        async function consultarManual() {
+            const texto = document.getElementById('manual-params').value.trim();
+            if (!texto) return showToast('Cole pelo menos um parâmetro!', 'error');
 
-      setResults(mappedResults);
-    } catch (err) {
-      alert("Erro ao consultar planilha: " + err.message);
-    } finally {
-      setGlobalLoading(false);
-    }
-  }
+            const paramsRaw = texto.split('\n').map(p => p.trim()).filter(p => p);
+            const limite = Math.min(parseInt(document.getElementById('manual-limite').value) || 10, paramsRaw.length);
+            const params = paramsRaw.slice(0, limite);
 
-  return React.createElement('div', { className: "max-w-6xl mx-auto p-6" },
+            if (params.length === 0) return;
 
-    React.createElement('h1', { className: "text-4xl font-bold text-center mb-8 text-blue-700 flex items-center justify-center gap-3" },
-      "🕵️ Portal da Transparência - RPA mostQI",
-      globalLoading && React.createElement('span', { className: "text-lg animate-pulse" }, "(processando...)")
-    ),
+            document.getElementById('btn-text').innerHTML = `Consultando <span class="font-mono">${params.length}</span> itens...`;
+            showLoading(true);
 
-    // Seção 1: Consulta manual (já tinha)
-    React.createElement('div', { className: "mb-12 p-6 bg-white rounded-2xl shadow" },
-      React.createElement('h2', { className: "text-2xl font-semibold mb-4" }, "Consulta Manual (um ou mais por linha)"),
-      React.createElement('textarea', {
-        placeholder: "Cole nomes / CPFs / NIS (um por linha)\nEx:\nFATIMA TERMOS\n187054551\nJOÃO SILVA",
-        value: paramsText,
-        onChange: e => setParamsText(e.target.value),
-        className: "w-full p-4 border-2 border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-lg font-mono whitespace-pre",
-        rows: 6
-      }),
-      React.createElement('div', { className: "text-center mt-6" },
-        React.createElement('button', {
-          onClick: consultar,
-          disabled: globalLoading || !paramsText.trim(),
-          className: "px-10 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold rounded-xl text-xl transition shadow-lg"
-        }, globalLoading ? "Consultando..." : "Consultar Manual")
-      )
-    ),
+            try {
+                const filtro = document.getElementById('manual-filtro').value.trim() || null;
 
-    // Seção 2: Consulta via Google Sheets (nova)
-    React.createElement('div', { className: "mb-12 p-6 bg-white rounded-2xl shadow" },
-      React.createElement('h2', { className: "text-2xl font-semibold mb-4" }, "Consulta em Lote via Google Sheets"),
-      React.createElement('input', {
-        type: "text",
-        placeholder: "ID da planilha (copie da URL: https://docs.google.com/spreadsheets/d/ID_AQUI/edit)",
-        value: planilhaId,
-        onChange: e => setPlanilhaId(e.target.value),
-        className: "w-full p-3 border rounded-xl mb-4 focus:outline-none focus:border-green-500"
-      }),
-      React.createElement('input', {
-        type: "number",
-        placeholder: "Quantas linhas processar (ex: 50)",
-        value: limitePlanilha,
-        onChange: e => setLimitePlanilha(e.target.value),
-        className: "w-full p-3 border rounded-xl mb-6 focus:outline-none focus:border-green-500",
-        min: 1,
-        max: 200
-      }),
-      React.createElement('div', { className: "text-center" },
-        React.createElement('button', {
-          onClick: consultarPlanilha,
-          disabled: globalLoading || !planilhaId.trim(),
-          className: "px-10 py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold rounded-xl text-xl transition shadow-lg"
-        }, globalLoading ? "Processando planilha..." : "Consultar da Planilha")
-      )
-    ),
+                // 🔥 PROCESSAMENTO PARALELO (backend controla semaphore)
+                const promises = params.map(param => 
+                    apiPost('/consultar', { param, filtro })
+                );
 
-    // Resultados (comum para as duas formas)
-results.length > 0 && React.createElement('div', { className: "space-y-10" },
-  results.map((item, i) => 
-    React.createElement('div', { key: i, className: "bg-white rounded-2xl shadow-lg p-6 border border-gray-200" },
-      React.createElement('h2', { className: "text-2xl font-bold mb-4 text-gray-800 border-b pb-2" },
-        item.param,
-        item.loading && React.createElement('span', { className: "ml-3 text-blue-500 animate-pulse" }, "consultando...")
-      ),
+                const resultadosRaw = await Promise.all(promises);
 
-      item.error && React.createElement('div', { className: "bg-red-50 border border-red-300 text-red-700 p-4 rounded-xl mb-6" },
-        item.error
-      ),
+                currentResults = resultadosRaw.map((raw, i) => ({
+                    param: params[i],
+                    dados: raw.dados || {},
+                    evidencias: raw.evidencias || [],
+                    erro: raw.erro
+                }));
 
-      item.data && !item.error && React.createElement('div', {},
-        // Panorama
-        React.createElement('div', { className: "mb-8" },
-          React.createElement('h3', { className: "text-xl font-semibold mb-2" }, "📊 Panorama"),
-          React.createElement('p', { className: "text-gray-700 whitespace-pre-line" },
-            item.data.dados?.panorama || "Panorama não encontrado"
-          )
-        ),
+                renderResults();
+                showToast(`${currentResults.length} consultas concluídas com sucesso!`, 'success');
+            } catch (err) {
+                showToast('Erro em uma ou mais consultas: ' + err.message, 'error');
+            } finally {
+                showLoading(false);
+                document.getElementById('btn-text').textContent = 'Consultar Agora';
+            }
+        }
 
-        // Benefícios
-        item.data.dados?.beneficios?.length > 0 && React.createElement('div', { className: "mb-8" },
-          React.createElement('h3', { className: "text-xl font-semibold mb-4" }, "💰 Benefícios encontrados"),
-          React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-6" },
-            item.data.dados.beneficios.map((b, j) =>
-              React.createElement('div', { key: j, className: "card bg-gray-50 rounded-xl p-5 border border-gray-200" },
-                React.createElement('h4', { className: "font-bold text-lg mb-2" }, b.nome),
-                React.createElement('p', { className: "text-gray-600 text-sm whitespace-pre-line" }, b.detalhes)
-              )
-            )
-          )
-        ),
+        // ================== CONTADOR LIVE NO TEXTAREA ==================
+        function updateParamCount() {
+            const textarea = document.getElementById('manual-params');
+            const count = textarea.value.trim().split('\n').filter(l => l.trim()).length;
+            document.getElementById('count-params').textContent = `${count} parâmetros`;
+        }
 
-        // Evidências
-        item.data.evidencias?.length > 0 && React.createElement('div', {},
-          React.createElement('h3', { className: "text-xl font-semibold mb-4" }, "📸 Evidências"),
-          React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
-            item.data.evidencias.map((ev, k) =>
-              React.createElement('div', { key: k, className: "bg-gray-50 rounded-xl overflow-hidden shadow" },
-                React.createElement('div', { className: "bg-blue-600 text-white px-4 py-2 font-medium" },
-                  ev.descricao || ev.tipo || "Evidência"
-                ),
-                React.createElement('img', {
-                  src: `data:image/png;base64,${ev.base64}`,
-                  alt: ev.descricao || "Screenshot",
-                  className: "evidence-img w-full object-contain p-3 bg-white"
-                })
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-)
-  );
-}   
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
-</script>
+        function clearTextarea() {
+            document.getElementById('manual-params').value = '';
+            updateParamCount();
+        }
+
+        // ================== PLANILHA (mantida) ==================
+        async function consultarPlanilha() {
+            showLoading(true);
+            try {
+                const payload = {
+                    spreadsheet_id: document.getElementById('planilha-id').value.trim(),
+                    worksheet_name: document.getElementById('planilha-aba').value.trim() || "Sheet1",
+                    coluna_param: document.getElementById('planilha-coluna').value.trim().toUpperCase() || "A",
+                    limite: parseInt(document.getElementById('planilha-limite').value) || 10,
+                    start_row: parseInt(document.getElementById('planilha-start').value) || 2
+                };
+
+                const result = await apiPost('/consultar-planilha', payload);
+                if (result.error) throw new Error(result.error);
+
+                currentResults = result.resultados || [];
+                renderResults();
+                showToast(`Planilha processada! ${result.processados} registros`, 'success');
+            } catch (err) {
+                showToast('Erro na planilha: ' + err.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ================== DEMO ==================
+        function loadDemo() {
+            currentResults = [
+                { param: "João Silva Santos", dados: { panorama: "Exemplo demo...", beneficios: [] }, evidencias: [{ tipo: "panorama", base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }] },
+                { param: "Maria Oliveira", dados: { panorama: "Outro exemplo...", beneficios: [] }, evidencias: [{ tipo: "panorama", base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }] }
+            ];
+            renderResults();
+            showToast('Demo com 2 registros carregado', 'success');
+        }
+
+        // ================== RENDER + MODAL (igual anterior, só mantido) ==================
+        function renderResults() {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('result-count').textContent = `${currentResults.length} resultado${currentResults.length !== 1 ? 's' : ''}`;
+
+            currentResults.forEach((item, index) => {
+                const cardHTML = `
+                    <div class="card bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                        <div class="px-6 py-5 bg-slate-50 border-b flex items-center gap-3">
+                            <div class="flex-1 font-semibold text-lg">${item.param}</div>
+                            <div class="text-xs px-3 py-1 bg-white border rounded-2xl">${item.evidencias.length} evidências</div>
+                        </div>
+                        <div class="p-6">
+                            <div class="text-xs uppercase tracking-widest text-slate-400 mb-2">Panorama</div>
+                            <p class="text-slate-700 text-[15px] line-clamp-4">${item.dados.panorama || 'Não encontrado'}</p>
+                        </div>
+                        ${item.dados.beneficios && item.dados.beneficios.length ? `
+                        <div class="px-6 pb-6">
+                            <div class="text-xs uppercase tracking-widest text-slate-400 mb-3">Benefícios (${item.dados.beneficios.length})</div>
+                            <div class="space-y-3 text-sm">
+                                ${item.dados.beneficios.map(b => `
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <div class="font-medium">${b.nome}</div>
+                                        <div class="text-slate-500 text-xs">${b.detalhes.substring(0,80)}...</div>
+                                    </div>
+                                    <a href="${b.link}" target="_blank" class="text-blue-600 text-xs">Ver →</a>
+                                </div>`).join('')}
+                            </div>
+                        </div>` : ''}
+                        <div class="px-6 pb-6">
+                            <div class="text-xs uppercase tracking-widest text-slate-400 mb-3">Evidências</div>
+                            <div class="grid grid-cols-3 gap-3">
+                                ${item.evidencias.map((ev, i) => `
+                                <div onclick="openModal(${index}, ${i})" class="thumb cursor-pointer rounded-2xl overflow-hidden border">
+                                    <img src="data:image/png;base64,${ev.base64}" class="w-full h-24 object-cover">
+                                    <div class="text-[10px] text-center py-1 bg-white">${ev.tipo}</div>
+                                </div>`).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHTML;
+            });
+        }
+
+        function openModal(resultIndex, evidenceIndex) {
+            const ev = currentResults[resultIndex].evidencias[evidenceIndex];
+            if (!ev.base64) return;
+            currentModalImage = ev.base64;
+            currentModalFilename = `${currentResults[resultIndex].param.replace(/[^a-z0-9]/gi,'_')}_${ev.tipo}.png`;
+            document.getElementById('modal-image').src = `data:image/png;base64,${ev.base64}`;
+            document.getElementById('modal-title').textContent = ev.descricao || 'Evidência';
+            document.getElementById('modal-desc').innerHTML = `<strong>Tipo:</strong> ${ev.tipo}<br><strong>Descrição:</strong> ${ev.descricao || '-'}`;
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('modal').classList.add('flex');
+        }
+
+        function closeModal() {
+            const m = document.getElementById('modal');
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
+        function downloadCurrentImage() {
+            const a = document.createElement('a');
+            a.href = `data:image/png;base64,${currentModalImage}`;
+            a.download = currentModalFilename;
+            a.click();
+            showToast('Download iniciado!', 'success');
+        }
+
+        // ================== UTILS ==================
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('hidden', !show);
+        }
+
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            document.getElementById('toast-text').textContent = msg;
+            document.getElementById('toast-icon').className = type === 'success' ? 'fas fa-check text-emerald-400' : 'fas fa-exclamation-triangle text-red-400';
+            t.classList.remove('hidden');
+            setTimeout(() => { t.classList.add('hidden'); }, 3500);
+        }
+
+        function clearResults() {
+            currentResults = [];
+            document.getElementById('results-container').innerHTML = '';
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('result-count').textContent = '0 resultados';
+        }
+
+        // ================== INIT ==================
+        function init() {
+            const textarea = document.getElementById('manual-params');
+            textarea.addEventListener('input', updateParamCount);
+            switchTab(0);
+            console.log('%c✅ Frontend atualizado com suporte a múltiplas consultas manuais!', 'color:#1e40af; font-weight:bold');
+        }
+
+        window.onload = init;
+    </script>
 </body>
 </html>
