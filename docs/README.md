@@ -1,42 +1,103 @@
-# Desafio mostQI - RPA + Hiperautomação (Portal da Transparência)
+# mostQI RPA - Portal da Transparência
 
-**Desafio Full Stack Python** – Parte 1 (obrigatória) + Parte 2 (bônus)  
-Repositório: https://github.com/darkking019/autobots.git
+**Solução RPA assíncrona robusta** para extração automatizada de dados do Portal da Transparência do Governo Federal (`portaldatransparencia.gov.br`).
 
-## ✨ O que foi entregue 
+---
 
-- ✅ RPA completo com **Playwright** (headless + paralelo)
-- ✅ Tratamento exato dos 5 cenários de teste do desafio
-- ✅ Evidência em **Base64 + PNG físico**
-- ✅ **API REST** com FastAPI (deploy Railway)
-- ✅ **Docker** + Dockerfile otimizado
-- ✅ Frontend simples (React via CDN) consumindo a API
-- ✅ Gerador de CPFs/NIS/nomes brasileiros válidos para testes
-- ✅ Execução paralela com `ThreadPoolExecutor`
-- ✅ Testes unitários (base)
+## TL;DR
 
-**Deploy ao vivo**:  
-API → https://autobots-production-8bc0.up.railway.app  
-tela em desenvovimento, local temporario de testes:
-https://autobots-production-8bc0.up.railway.app/docs#/
+Bot RPA assíncrono em Python construído com:
+
+- **FastAPI** + **Playwright**
+- **Controle de concorrência com asyncio + Semaphore**
+- **Pool compartilhado de navegadores**
+- **Processamento em lote via Google Sheets**
+- **Captura completa de evidências** (PNG + Base64)
+- **Docker-first** com healthcheck e volumes persistentes
+
+Projetado para extração confiável, total auditabilidade e fácil revisão.
+
+**Deploy em produção:** [https://autobots-production-8bc0.up.railway.app/](https://autobots-production-8bc0.up.railway.app/)
+
+---
+
+## Visão Geral do Projeto
+
+Este projeto implementa um bot RPA pronto para produção que:
+
+- Consulta o Portal da Transparência por nome, CPF ou NIS
+- Extrai o "Panorama da relação com o Governo Federal" e todos os detalhes de "Recebimentos de recursos"
+- Gera evidências completas (screenshots físicos + Base64)
+- Suporta consultas individuais e processamento em lote via Google Sheets
+- Expõe API REST moderna com frontend SPA interativo
+
+Desenvolvido com foco em confiabilidade, rastreabilidade e escalabilidade.
+
+---
+
+## Principais Funcionalidades
+
+- Scraping assíncrono com Playwright (navegação estável + AJAX)
+- Consultas individuais e em lote (API + Google Sheets)
+- Captura completa de evidências (pastas PNG por pessoa + Base64)
+- Frontend SPA moderno (Tailwind + visualizador de evidências em modal)
+- Interface CLI para testes paralelos
+- Deploy Docker-first com limites de recurso e healthcheck
+- Logging estruturado em arquivo
+- Integração Google Sheets via service account
+
+---
+
+## Visão Geral da Arquitetura
+
+```ascii
+                  ┌─────────────────────┐
+                  │   Frontend (SPA)    │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │      FastAPI        │
+                  │     (API Layer)     │
+                  └──────────┬──────────┘
+                             │
+                     run_bot(param)
+                             │
+              ┌──────────────▼──────────────┐
+              │  Playwright Browser Pool    │
+              │  + Async Semaphore Control  │
+              └──────────────┬──────────────┘
+                             │
+                  Portal da Transparência
+Execution Flow:
+
+FastAPI recebe a requisição
+run_bot() adquire slot no semaphore
+Browser context é criado a partir do pool compartilhado
+Navegação + scraping + captura de screenshots
+Evidências são armazenadas (físicas + Base64)
+Contexto é fechado e semaphore é liberado
+JSON estruturado é retornado ao cliente
 
 
-## 🚀 Como rodar
+```markdown
+## Decisões Técnicas Importantes
+Arquitetura 100% assíncrona
+Todo o processamento usa asyncio + asyncio.gather() para máxima performance sem threads.
+Browser Pool
+Instância única do Chromium (com lock) reutilizada por todas as requisições — reduz drasticamente consumo de memória e tempo de inicialização.
+Controle de Concorrência
+asyncio.Semaphore(MAX_CONTEXTS) (padrão: 6, configurável via variável de ambiente).
+Lógica de Retry
+Backoff exponencial com jitter em todas as navegações críticas (até 5 tentativas).
+Evidências e Rastreabilidade
+Screenshots salvos em ./evidencia/<nome-slug>/ + Base64 em todas as respostas.
+Containerização
+Imagem oficial Playwright + shm_size: 2gb, healthcheck e volumes persistentes.
+Integração Google Sheets
+Processamento paralelo respeitando o mesmo limite de concorrência.
 
-### 1. Local (CLI)
-```bash
-pip install -r requirements.txt
-playwright install chromium
-python src/main.py --param "FATIMA TERMOS" "JOÃO SILVA" "187054551"
-2. API Local
-python -m uvicorn src.api:app --reload --host 127.0.0.1 --port 8000
 
-# Teste: http://localhost:8000/docs (Swagger)
-3. Docker
-Bashdocker build -t mostqi-rpa .
-docker run --rm mostqi-rpa --param "187054551"
-4. Frontend
-Abra frontend/index.html no navegador (já aponta para o deploy).
+
 📂 Estrutura do Projeto
 Hiperautomacao/
 ├── README.md                 
@@ -47,7 +108,7 @@ Hiperautomacao/
 │
 ├── src/
 │   ├── __init__.py
-│   ├── main.py                ← CLI (argparse + ThreadPool)
+│   ├── main.py                ← CLI (argparse + CLI wrapper para execução concorrente do bot)
 │   ├── bot.py                 ← função run_bot() pura (extraia do main)
 │   ├── api.py                 ← FastAPI
 │   ├── utils.py               ← capture_screenshot + generate_json
@@ -62,19 +123,74 @@ Hiperautomacao/
 │   └── gerador_dados_teste.py ← gerador de dados
 │
 
-🛠️ Decisões Técnicas
+Como Executar
+Deploy em Produção (Railway)
+Acesse diretamente:
+→ https://autobots-production-8bc0.up.railway.app/
+(Swagger em /docs e frontend interativo)
+Local com Docker (Recomendado)
+Bash# 1. Crie o .env
+echo 'GOOGLE_CREDENTIALS={"type": "service_account", ...}' > .env
 
-Playwright → escolha oficial do desafio + mais estável que Selenium.
-FastAPI → moderna, async-ready, Swagger automático.
-Docker → garantiu portabilidade .
-ThreadPoolExecutor → execução simultânea de múltiplos bots .
-Evidência dupla (Base64 + PNG) → confiabilidade em auditoria.
+# 2. Rode
+docker compose up --build -d
+Desenvolvimento Local
+Bashpip install -r requirements.txt
+uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+
+Uso da API
+Consulta individual
+Bashcurl -X POST https://autobots-production-8bc0.up.railway.app/consultar \
+  -H "Content-Type: application/json" \
+  -d '{"param": "João Silva Santos"}'
+Processamento em lote via planilha (mesmo endpoint /consultar-planilha)
+Documentação completa: /docs
+
+Evidências e Rastreabilidade
+Cada execução gera:
+
+Pasta física ./evidencia/<nome-slug>/ com screenshots numerados
+Evidências Base64 no JSON (prontas para auditoria)
+Logs completos em ./logs/app.log
+
+
+Performance e Concorrência
+
+Concorrência controlada em 6 contextos simultâneos (configurável)
+Pool compartilhado de navegador
+Testado com +50 consultas paralelas
+Retries automáticos em falhas transitórias
+
+
+Trade-offs de Engenharia
+Este projeto foi projetado para equilibrar robustez e simplicidade dentro do escopo de um desafio técnico.
+Algumas melhorias de nível produção foram intencionalmente deixadas de fora para manter a arquitetura fácil de rodar localmente e fácil de revisar.
+Melhorias potenciais (não implementadas):
+
+Filas distribuídas (Celery + RabbitMQ/Redis)
+Armazenamento de evidências em objeto (S3/MinIO)
+Observabilidade completa (Prometheus + OpenTelemetry)
+Autoscaling horizontal de workers
+Estratégias avançadas de anti-bot
+
+O que foi priorizado:
+
+Reprodutibilidade total
+Scraping determinístico
+Arquitetura clara e fácil de manter
+Deploy simples e rápido
 
 📋 Relatório de Entrega
 
 Desafios enfrentados: instabilidade leve do site e falta de clareza de onde estavam divs no f12 para recuperar os dados necessarios para fazer a busca com os bots.
 
 Testes cobertos: todos os 5 cenários do desafio + gerador de massa.
+
+Conclusão
+criado com práticas de produção em mente, com excelente rastreabilidade e performance.
+Código limpo, bem estruturado e fácil de estender.
+Pronto para avaliação técnica.
+Deploy ativo: https://autobots-production-8bc0.up.railway.app/
 
 👨‍💻 Autor
 Jonathan Henrique Ribeiro
