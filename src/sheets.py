@@ -5,7 +5,7 @@ import os
 import logging
 from google.oauth2.service_account import Credentials
 
-from src.bot import run_bot
+from src.bot import run_bot  # run_bot deve ser async
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ def get_gspread_client():
     creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
+
 
 async def consultar_planilha(
     spreadsheet_id: str,
@@ -43,8 +44,8 @@ async def consultar_planilha(
     if not params:
         return {"error": "Nenhum dado válido encontrado na coluna", "processados": 0}
 
-    # === EXECUÇÃO PARALELA COM ASYNCIO (corrigido) ===
-    tasks = [run_bot(param) for param in params]          # run_bot já é async
+    # === EXECUÇÃO PARALELA COM ASYNCIO ===
+    tasks = [run_bot(param) for param in params]  # run_bot é async
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     resultados = []
