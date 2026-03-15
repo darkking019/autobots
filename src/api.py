@@ -55,7 +55,13 @@ async def consultar(request: ConsultaRequest):
 @app.post("/consultar-planilha")
 async def consultar_da_planilha(req: PlanilhaRequest):
     try:
-        resultado = consultar_planilha(...)  
+        resultado = await consultar_planilha(
+            spreadsheet_id=req.spreadsheet_id,
+            worksheet_name=req.worksheet_name,
+            coluna_param=req.coluna_param,
+            limite=req.limite,
+            start_row=req.start_row
+        )
         return resultado
     except Exception as e:
         logger.exception("Erro na rota /consultar-planilha")
