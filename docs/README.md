@@ -156,7 +156,7 @@ Performance e Concorrência
 
 Concorrência controlada em 6 contextos simultâneos (configurável)
 Pool compartilhado de navegador
-Testado com +50 consultas paralelas
+Testado com 49 consultas paralelas
 Retries automáticos em falhas transitórias
 
 
@@ -172,6 +172,8 @@ Armazenamento de evidências em objeto (S3/MinIO)
 Observabilidade completa (Prometheus + OpenTelemetry)
 Autoscaling horizontal de workers
 Estratégias avançadas de anti-bot
+instabilidade extrema em deploy(possivelmente antibots) limite de 2 na nuvem 
+
 
 O que foi priorizado:
 
