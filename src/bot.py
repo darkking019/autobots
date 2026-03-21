@@ -19,17 +19,17 @@ _global_browser = None
 _global_lock = None
 
 async def get_browser():
-    """Browser global à prova de falhas + recriação automática"""
+    """Browser global À PROVA DE RACE CONDITION (versão 2026)"""
     global _global_playwright, _global_browser, _global_lock
 
     if _global_lock is None:
         _global_lock = asyncio.Lock()
 
-    async with _global_lock:
-        # Recria se morreu (canal None ou fechado)
+    async with _global_lock:                      # Lock mais forte
         needs_recreate = (
             _global_browser is None or
-            getattr(_global_browser, '_channel', None) is None
+            getattr(_global_browser, '_channel', None) is None or
+            _global_browser.is_closed()           # ← ESSA LINHA SALVA TUDO
         )
 
         if needs_recreate:
@@ -39,18 +39,22 @@ async def get_browser():
                     await _global_playwright.stop()
                 except:
                     pass
+
             _global_playwright = await async_playwright().start()
             _global_browser = await _global_playwright.chromium.launch(
                 headless=os.getenv("HEADLESS", "true").lower() == "true",
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-setuid-sandbox",
+                    "--disable-gpu",
+                    "--single-process"               
+                ]
             )
             logger.info("✅ Browser global recriado com sucesso!")
 
-        if _global_browser is None:
-            raise RuntimeError("❌ Browser global falhou ao inicializar!")
-
         return _global_browser
-
 
 async def close_global_browser():
     """Fecha o browser global com segurança (usado no fixture de teste)"""
@@ -147,16 +151,31 @@ async def run_bot(parametro: str, filtro: str = None):
         logger.info(f"🚀 Iniciando bot para: {parametro}")
 
         browser = await get_browser()
-        context = await browser.new_context(
-            viewport={"width": 1366, "height": 768},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            locale="pt-BR",
-            timezone_id="America/Sao_Paulo",
-            bypass_csp=True,
-            java_script_enabled=True,
-            service_workers="block",
-            has_touch=False,
-        )
+
+        # === PROTEÇÃO CONTRA RACE CONDITION ===
+        for attempt in range(3):
+            try:
+                context = await browser.new_context(
+                    viewport={"width": 1366, "height": 768},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    locale="pt-BR",
+                    timezone_id="America/Sao_Paulo",
+                    bypass_csp=True,
+                    java_script_enabled=True,
+                    service_workers="block",
+                    has_touch=False,
+                )
+                break
+            except Exception as e:
+                if "TargetClosedError" in str(e) or "has been closed" in str(e):
+                    logger.warning(f"Browser fechado inesperadamente. Recriando (tentativa {attempt+1}/3)")
+                    global _global_browser
+                    _global_browser = None          
+                    browser = await get_browser()
+                    await asyncio.sleep(1.5)
+                else:
+                    raise
+       
         page = await context.new_page()
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
 
