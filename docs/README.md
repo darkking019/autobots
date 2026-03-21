@@ -109,12 +109,12 @@ Hiperautomacao/
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                ← CLI (argparse + CLI wrapper para execução concorrente do bot)
-│   ├── bot.py                 ← função run_bot() pura (extraia do main)
+│   ├── bot.py                 ← função run_bot() 
 │   ├── api.py                 ← FastAPI
 │   ├── utils.py               ← capture_screenshot + generate_json
 │   └──sheets.py
 ├── front/
-│   └── index.html             ← seu React simples (demo)
+│   └── index.html             ←  React simples (demo)
 │
 ├── tests/
 │   └── test_bot.py
@@ -135,8 +135,8 @@ echo 'GOOGLE_CREDENTIALS={"type": "service_account", ...}' > .env
 # 2. Rode
 docker compose up --build -d
 Desenvolvimento Local
-Bashpip install -r requirements.txt
-uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+pip install -r requirements.txt
+
 
 Uso da API
 Consulta individual
@@ -144,8 +144,6 @@ Bashcurl -X POST https://autobots-production-8bc0.up.railway.app/consultar \
   -H "Content-Type: application/json" \
   -d '{"param": "João Silva Santos"}'
 Processamento em lote via planilha (mesmo endpoint /consultar-planilha)
-Documentação completa: /docs
-
 Evidências e Rastreabilidade
 Cada execução gera:
 
@@ -162,11 +160,13 @@ Testado com +50 consultas paralelas
 Retries automáticos em falhas transitórias
 
 
-Trade-offs de Engenharia
+⚠️ Limitações Conhecidas (e próximas melhorias)
+
 Este projeto foi projetado para equilibrar robustez e simplicidade dentro do escopo de um desafio técnico.
 Algumas melhorias de nível produção foram intencionalmente deixadas de fora para manter a arquitetura fácil de rodar localmente e fácil de revisar.
 Melhorias potenciais (não implementadas):
-
+Locators ainda dependem um pouco do layout do site (governo muda)
+Nome dos benefícios ainda genérico em alguns casos (já identificado para próxima versão)
 Filas distribuídas (Celery + RabbitMQ/Redis)
 Armazenamento de evidências em objeto (S3/MinIO)
 Observabilidade completa (Prometheus + OpenTelemetry)
@@ -181,10 +181,16 @@ Arquitetura clara e fácil de manter
 Deploy simples e rápido
 
 📋 Relatório de Entrega
+Desafios superados:
 
-Desafios enfrentados: instabilidade leve do site e falta de clareza de onde estavam divs no f12 para recuperar os dados necessarios para fazer a busca com os bots.
+Instabilidade do portal (resolvido com retry + browser pool)
+Filtro complexo (implementado com lógica inteligente)
+Evidências em Base64 + PNG
+Processamento paralelo sem travar
 
 Testes cobertos: todos os 5 cenários do desafio + gerador de massa.
+como rodar:
+python -m pytest tests/test_bot.py -v --asyncio-mode=auto
 
 Conclusão
 criado com práticas de produção em mente, com excelente rastreabilidade e performance.

@@ -18,6 +18,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.FileHandler("app.log"), logging.StreamHandler()]
 )
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="API Consulta Portal da Transparência - Desafio mostQI", version="1.0.0")

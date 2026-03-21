@@ -26,7 +26,7 @@ def get_gspread_client():
 
 async def consultar_planilha(
     spreadsheet_id: str,
-    worksheet_name: str = "Sheet1",
+    worksheet_name: str = "TÉCNICO",
     coluna_param: str = "A",
     limite: int = 50,
     start_row: int = 2

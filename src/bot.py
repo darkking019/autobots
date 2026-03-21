@@ -8,27 +8,70 @@ from pathlib import Path
 from unicodedata import normalize
 
 import base64
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
-# ===================== GLOBAL BROWSER POOL =====================
+# ===================== CLEANUP GLOBAL BROWSER (OBRIGATÓRIO PARA TESTES) =====================
+# ===================== GLOBAL BROWSER POOL + CLEANUP (VERSÃO FINAL) =====================
 _global_playwright = None
 _global_browser = None
-_global_lock = asyncio.Lock()
+_global_lock = None
 
 async def get_browser():
-    global _global_playwright, _global_browser
+    """Browser global à prova de falhas + recriação automática"""
+    global _global_playwright, _global_browser, _global_lock
+
+    if _global_lock is None:
+        _global_lock = asyncio.Lock()
+
     async with _global_lock:
-        if _global_browser is None:
-            logger.info("🚀 Iniciando Browser Pool Async")
+        # Recria se morreu (canal None ou fechado)
+        needs_recreate = (
+            _global_browser is None or
+            getattr(_global_browser, '_channel', None) is None
+        )
+
+        if needs_recreate:
+            logger.info("🔄 [BROWSER POOL] Recriando browser global...")
+            if _global_playwright:
+                try:
+                    await _global_playwright.stop()
+                except:
+                    pass
             _global_playwright = await async_playwright().start()
             _global_browser = await _global_playwright.chromium.launch(
                 headless=os.getenv("HEADLESS", "true").lower() == "true",
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
             )
+            logger.info("✅ Browser global recriado com sucesso!")
+
+        if _global_browser is None:
+            raise RuntimeError("❌ Browser global falhou ao inicializar!")
+
         return _global_browser
 
+
+async def close_global_browser():
+    """Fecha o browser global com segurança (usado no fixture de teste)"""
+    global _global_browser, _global_playwright
+    logger = logging.getLogger(__name__)
+    
+    if _global_browser:
+        try:
+            await _global_browser.close()
+            _global_browser = None
+            logger.info("✅ [CLEANUP] Browser global fechado")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao fechar browser: {e}")
+    
+    if _global_playwright:
+        try:
+            await _global_playwright.stop()
+            _global_playwright = None
+            logger.info("✅ [CLEANUP] Playwright parado")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao parar playwright: {e}")
 # ===================== CONFIG =====================
 MAX_CONTEXTS = int(os.getenv("MAX_CONTEXTS", "6"))
 CONTEXT_SEMAPHORE = asyncio.Semaphore(MAX_CONTEXTS)
@@ -118,11 +161,96 @@ async def run_bot(parametro: str, filtro: str = None):
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
 
         try:
-            # Busca + Abrir Perfil
+            # Busca Inicial
             busca_url = f"https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo={urllib.parse.quote(parametro.strip())}"
             await goto_with_retry(page, busca_url)
             await accept_cookies(page)
             await page.wait_for_timeout(3000)
+
+            # ==============================================================
+            #  APLICAÇÃO DE FILTROS INTELIGENTE (aceita ID OU texto do label)
+            # ==============================================================
+            if filtro:
+                logger.info(f"Aplicando filtros de busca: {filtro}")
+                
+                filtros_lista = [f.strip() for f in filtro.split(",") if f.strip()]
+                filtro_aplicado_com_sucesso = False
+
+                for attempt in range(1, MAX_RETRIES + 1):
+                    try:
+                        logger.info(f"🔄 Tentativa {attempt}/{MAX_RETRIES} de aplicar filtros")
+
+                        # 1. Garantir que o box #box-busca-refinada está aberto
+                        refine_box = page.locator('#box-busca-refinada')
+                        if not await refine_box.is_visible(timeout=4000):
+                            btn_refinar = page.locator(
+                                'button[aria-controls="box-busca-refinada"], '
+                                'button:has-text("Refine a Busca"), '
+                                'button:has-text("refinar")'
+                            ).first
+                            if await btn_refinar.is_visible(timeout=5000):
+                                await btn_refinar.click(force=True)
+                                await page.wait_for_timeout(1200)
+                            await refine_box.wait_for(state="visible", timeout=8000)
+                            logger.debug("✅ Box 'Refine a Busca' aberto")
+
+                        # 2. Resolver cada filtro de forma inteligente (ID ou texto do label)
+                        falhas = []
+                        for user_input in filtros_lista:
+                            logger.debug(f"🔍 Resolvendo filtro: '{user_input}'")
+
+                            # Tenta como ID direto primeiro
+                            direct_checkbox = page.locator(f'#{user_input}')
+                            if await direct_checkbox.count() > 0:
+                                label = page.locator(f'label[for="{user_input}"]')
+                                await label.click(force=True)
+                                await page.wait_for_timeout(500)
+                                if await direct_checkbox.is_checked():
+                                    logger.debug(f"✅ '{user_input}' (ID direto) marcado")
+                                    continue
+                                else:
+                                    falhas.append(user_input)
+                                    continue
+
+                            # Tenta como texto do label (suporte a "Beneficiário de Programa Social")
+                            label_locator = page.locator(
+                                f'#box-busca-refinada label:has-text("{user_input}")'
+                            ).first
+                            if await label_locator.count() > 0:
+                                await label_locator.click(force=True)
+                                await page.wait_for_timeout(500)
+                                fid = await label_locator.get_attribute('for')
+                                checkbox = page.locator(f'#{fid}')
+                                if await checkbox.is_checked():
+                                    logger.debug(f"✅ '{user_input}' → #{fid} marcado")
+                                    continue
+                                else:
+                                    falhas.append(user_input)
+                            else:
+                                falhas.append(user_input)
+
+                        if falhas:
+                            raise Exception(f"Filtros não encontrados/marcados: {falhas}")
+
+                        # 3. Clicar em Consultar
+                        btn_consultar = page.locator('#btnConsultarPF')
+                        await btn_consultar.click(force=True)
+                        await page.wait_for_load_state("networkidle", timeout=15000)
+                        await page.wait_for_timeout(3000)
+
+                        filtro_aplicado_com_sucesso = True
+                        logger.info(f"✅ Filtro aplicado com sucesso na tentativa {attempt}")
+                        break
+
+                    except Exception as e:
+                        logger.warning(f"Tentativa {attempt} falhou: {str(e)[:150]}")
+                        if attempt < MAX_RETRIES:
+                            await asyncio.sleep(BASE_BACKOFF * (2 ** (attempt - 1)) + random.uniform(0.5, 2))
+
+                if not filtro_aplicado_com_sucesso:
+                    logger.warning("⚠️ Não foi possível aplicar o filtro após todas as tentativas. Continuando busca SEM filtro.")
+
+            # ==============================================================
 
             # Abrir perfil com retry
             for attempt in range(3):
@@ -165,7 +293,7 @@ async def run_bot(parametro: str, filtro: str = None):
                         await btn.click(delay=400)
                         await page.wait_for_selector('#loadingcollapse-3', state="hidden", timeout=10000)
                         await page.wait_for_selector('#accordion-recebimentos-recursos a:has-text("Detalhar")', 
-                                                    timeout=15000, state="visible")
+                                                     timeout=15000, state="visible")
                         accordion_aberto = True
                         break
                 except:
